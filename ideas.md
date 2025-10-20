@@ -9,7 +9,11 @@ aunque creo que eso era lo del ddsp
 
 tmb se le podría pasar audio y que lo convierta en el instrumento deseado
 
-## Documentos interesantes
-[A survey of deep learning audio generation methods](https://arxiv.org/pdf/2406.00146)
+una vez generado un sonido, tener una interfaz estilo arbol o plano para poder explorar otros sonidos cercanos en su espacio latente
 
-[MULTI-INSTRUMENT MUSIC SYNTHESIS WITH SPECTROGRAM DIFFUSION](https://arxiv.org/pdf/2206.05408)
+## Documentos interesantes
+* [A survey of deep learning audio generation methods](https://arxiv.org/pdf/2406.00146):
+
+* [MULTI-INSTRUMENT MUSIC SYNTHESIS WITH SPECTROGRAM DIFFUSION](https://arxiv.org/pdf/2206.05408)
+    [github](https://github.com/magenta/music-spectrogram-diffusion)
+    [github de otra implementacion](https://github.com/yoyolicoris/music-spectrogram-diffusion-pytorch) -> también tiene datasets interesantes
