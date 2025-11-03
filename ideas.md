@@ -17,3 +17,4 @@ una vez generado un sonido, tener una interfaz estilo arbol o plano para poder e
 * [MULTI-INSTRUMENT MUSIC SYNTHESIS WITH SPECTROGRAM DIFFUSION](https://arxiv.org/pdf/2206.05408)
     [github](https://github.com/magenta/music-spectrogram-diffusion)
     [github de otra implementacion](https://github.com/yoyolicoris/music-spectrogram-diffusion-pytorch) -> también tiene datasets interesantes
+    -> Para generar cada chunk de audio (5s) emplean el chunk anterior a modo de contexto para que las transiciones sean suaves, puede ser una solución a lo que comentamos de cortes
