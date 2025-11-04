@@ -4,10 +4,11 @@ import numpy as np
 import pandas as pd
 import torch
 from IPython.display import Audio
-from dash import Dash, html, dcc, callback, Output, Input
 import plotly.express as px
 import pandas as pd
-from scipy.io import wavfile
+import plotly.io as pio
+pio.renderers.default = "notebook"
+
 
 def plot_waveform(waveform):
     plt.figure(figsize=(10, 4))
@@ -16,16 +17,13 @@ def plot_waveform(waveform):
     plt.xlabel("Samples")
     plt.ylabel("Amplitude")
     plt.show()
-    
-def plot_interactive_waveform(waveform, sample_rate=1, name="", app=None):
+
+# requiere pio.renderers.default = "notebook"
+def plot_interactive_waveform(waveform, sample_rate=1, name=""):
     df = pd.DataFrame({"amp": waveform})
     df["secs"] = df.index / sample_rate
-    if app is None:
-        app = Dash()
-        app.layout = []
-    app.layout += dcc.Graph(id='graph-content', figure=px.line(df, x='secs', y='amp'))
-    if not app._server_running:
-        app.run(debug=True)
+    wave = px.line(df, y="amp", title=name)
+    wave.show()    
 
 def plot_mel_spectrogram(mel_spec_db):
     plt.figure(figsize=(10, 4))
