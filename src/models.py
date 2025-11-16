@@ -73,7 +73,22 @@ class Decoder(nn.Module):
         self.unflatten = nn.Unflatten(dim=1, unflattened_size=(rev_channels[0], expected_size[0], expected_size[1]))
 
         deconv_blocks = []
+        current_size = expected_size    #empieza en rev_sizes[0]
         for i in range(1, len(rev_sizes)):
+            target = rev_sizes[i]  # el tamaño que queremos alcanzar en esta capa
+            calc_no_op = compute_convTranspose2D_output_size(
+                current_size, kernel_size, stride, padding
+            )   #cálculo del size esperado sin output_padding
+
+            #decidir output padding por eje (0 o 1)
+            op_h = target[0] - calc_no_op[0]
+            op_w = target[1] - calc_no_op[1]
+            op_h = 1 if op_h > 0 else 0
+            op_w = 1 if op_w > 0 else 0
+            output_padding = (op_h, op_w)
+            #opcional: debug para ver tamaños capa a capa
+            
+            #crear la capa transposta con ese output padding, antes output padding era siempre 0
             deconv = nn.ConvTranspose2d(
                 rev_channels[i - 1],
                 rev_channels[i],
@@ -90,12 +105,23 @@ class Decoder(nn.Module):
                 block = nn.Sequential(deconv)
 
             deconv_blocks.append(block)
+            
+            #actualizar current_size para la siguiente capa. nuestro helper no acepta output padding, recomputa a mano
+            current_size = (
+                calc_no_op[0] + output_padding[0],
+                calc_no_op[1] + output_padding[1],
+            )
+            
+            assert current_size == target, f"Mismatch en capa {i}: got {current_size} vs target {target}"
         self.decoder = nn.Sequential(*deconv_blocks) #, nn.Signmoid())
 
     def forward(self, x):
+       # print("[DEC FWD] input z:", x.shape)
         x = self.fc(x)
         x = self.unflatten(x)
+        ##print("[DEC FWD] after unflatten:", x.shape)
         x = self.decoder(x)
+       # print("[DEC FWD] after convT stack:", x.shape)
         return x
 
 
@@ -111,11 +137,14 @@ class AutoEncoder(nn.Module):
 
         self.encoder = Encoder(input_size, latent_dim, channels)
         sizes = self.encoder.get_sizes()
+      #  print("[ENCODER] sizes:", sizes)    #para ver los tamaños, t dice como van quedando las h, w en cada capa
         self.decoder = Decoder(sizes, latent_dim, channels)
 
     def forward(self, x):
         z = self.encoder(x)
         reconstructed = self.decoder(z)
+        #print("[AE FWD] x:", x.shape, "rec:", reconstructed.shape)
+
         target_height, target_width = x.shape[2], x.shape[3]
         reconstructed = adjust_shape(reconstructed, (target_height, target_width))
         return reconstructed
