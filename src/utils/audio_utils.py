@@ -1,8 +1,14 @@
 import librosa
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import torch
 from IPython.display import Audio
+import plotly.express as px
+import pandas as pd
+import plotly.io as pio
+pio.renderers.default = "notebook"
+
 
 def plot_waveform(waveform):
     plt.figure(figsize=(10, 4))
@@ -11,6 +17,13 @@ def plot_waveform(waveform):
     plt.xlabel("Samples")
     plt.ylabel("Amplitude")
     plt.show()
+
+# requiere pio.renderers.default = "notebook"
+def plot_interactive_waveform(waveform, sample_rate=1, name=""):
+    df = pd.DataFrame({"amp": waveform})
+    df["secs"] = df.index / sample_rate
+    wave = px.line(df, y="amp", title=name)
+    wave.show()    
 
 def plot_mel_spectrogram(mel_spec_db):
     plt.figure(figsize=(10, 4))
