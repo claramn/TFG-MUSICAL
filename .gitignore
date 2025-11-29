@@ -1,2 +1,9 @@
 data
 env-musical
+__pycache__
+*.pyc
+.DS_Store
+.vscode
+.idea
+logs
+*.log
