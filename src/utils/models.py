@@ -8,6 +8,11 @@ import torch
 MAX_MAGNITUDE = 165.65298461914062
 MAX_PHASE = torch.pi
 
+"""
+posible problema mencionado por pabs: si no se ajustan bn las capas, las dimensiones d entrada y salida no coinciden
+y hay desajustes dimensionales. para arreglarlo, revisar la salida d las funciones para asegurarse d q coinciden en encoder y decoder 
+¡
+"""
 def compute_magnitude_and_phase(stft_spec, normalize=False):
     magnitude = stft_spec.abs()  
     phase = torch.angle(stft_spec)
@@ -15,7 +20,8 @@ def compute_magnitude_and_phase(stft_spec, normalize=False):
         magnitude /= MAX_MAGNITUDE
         phase /= MAX_PHASE
     return magnitude, phase
-
+ 
+#calcula como cambia el tam d la imagen dsps d pasar por una capa convolucional
 def compute_conv2D_output_size(input_size, kernel_size, stride, padding):
     """
         Returns the output (2D) size of a convolutional layer based on the formula:
@@ -29,6 +35,7 @@ def compute_conv2D_output_size(input_size, kernel_size, stride, padding):
     output_width = _compute_conv2D_output_size(input_size[1], kernel_size[1], stride[1], padding[1])
     return (output_height, output_width)
 
+#lo mismo q la otra pero para conv transpuesta, q es la q usa el decoder para intentar reconstruir el tam original d la imagen 
 def compute_convTranspose2D_output_size(input_size, kernel_size, stride, padding):
     """
         Returns the output (2D) size of a transposed convolutional layer based on the formula:
