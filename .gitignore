@@ -1,6 +1,7 @@
 data
 env-musical
 env-musical*
+__pycache__/*
 __pycache__
 *.pyc
 .DS_Store
