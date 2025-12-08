@@ -7,7 +7,7 @@ import math
 
 
 class Scheduler(nn.Module):
-    def __init__(self, num_epochs, beta_init=1e-4, beta_finish=0.02):
+    def __init__(self, num_epochs, device, beta_init=1e-4, beta_finish=0.02):
         super().__init__()
         self.beta = torch.linspace(beta_init, beta_finish, num_epochs, device=device)
         self.alpha = 1 - self.beta
@@ -39,7 +39,7 @@ class Diffuser(nn.Module):
     
     
 class Embeder(nn.Module):
-    def __init__(self, num_epochs, embed_dim):
+    def __init__(self, num_epochs, embed_dim, device):
         super().__init__()
         position = torch.arange(num_epochs, device=device).unsqueeze(1).float()
         div = torch.exp(torch.arange(0, embed_dim, 2, device=device).float() * -(math.log(10000.0) / embed_dim))
