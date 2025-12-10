@@ -70,14 +70,32 @@ class DummyLayer(nn.Module):
         res = self.res_conv(out)
         return out, res
 
+class NoopLayer(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, t_emb):
+        return x, x
 
 class DiffusionModel(nn.Module):
-    def __init__(self, channels:list, norm_groups:int, layers:list[nn.Module], embedder:nn.Module, input_channels=1, output_channels=1):
+    def __init__(self, 
+            channels:list, 
+            norm_groups:int, 
+            embedder:nn.Module, 
+            down_layers:list[nn.Module],
+            bottleneck:nn.Module=None, 
+            up_layers:list[nn.Module]=None, 
+            input_channels=1, 
+            output_channels=1
+        ):
         '''
             - input_channels: canales de entrada (1 para escala de grises, 3 para RGB)
             - output_channels: canales de salida (1 para escala de grises, 3 para RGB)
-            - layers: capas que van a hacer vainas a la entrada, la clase aun no esta implementada -> la entrada coincide con channels 0
+            - layers: capas que van a procesar a la entrada??, la clase aun no esta implementada 
+                -> la entrada coincide con channels 0
                 -> la salida coincide con channels 1
+                * down_layers: capas de downsampling
+                * up_layers: capas de upsampling
             - embedder: objeto que va a hacer el embedding del tiempo
             - channels: 
                 0. canales de salida de la primera convolucion = canales de entrada a las layers
@@ -107,16 +125,21 @@ class DiffusionModel(nn.Module):
         )
         
         self.embeder = embedder
-        self.layers = layers
+        self.down_layers = down_layers
+        self.up_layers = up_layers or nn.NoopLayer()
+        self.bottleneck = bottleneck or nn.NoopLayer()
+
         
     def forward(self, x, t):
-        return self.forward_withres(x, t)
+        return self.foward_withskip(x, t)
     
     def forward_nores(self, x, t):
         B, C, H, W = x.shape # batch, canales, altura, anchura
         x = self.conv_in(x)
         t_emb = self.embeder(x, t)
-        for layer in self.layers:
+        for layer in self.down_layers:
+            x, r = layer(x, t_emb)
+        for layer in self.up_layers:
             x, r = layer(x, t_emb)
         return self.conv_out(x)
         
@@ -126,15 +149,34 @@ class DiffusionModel(nn.Module):
         x = self.conv_in(x)
         t_emb = self.embeder(x, t)
         residuals = []
-        it = 0
-        for layer in self.layers:
-            if it < len(self.layers) //2:
-                x, r = layer(x, t_emb)
-                residuals.append(r)
-            else:
-                x = torch.concat((layer(x, t_emb)[0], residuals.pop()), dim=1)
-            it += 1
-        # x = self.relu(x)
+        for layer in self.down_layers:
+            x, r = layer(x, t_emb)
+            residuals.append(r)
+        residuals = residuals[::-1] 
+        x, _ = self.bottleneck(x, t_emb)
+        # residuals.append(r)
+        for layer in self.up_layers:
+            x = torch.concat((layer(x, t_emb)[0], residuals.pop()), dim=1)
+        x = self.relu(x)
         return self.conv_out(x)
     
+    def foward_withskip(self, x, t):
+        B, C, H, W = x.shape # batch, canales, altura, anchura
+        
+        x = self.conv_in(x)
+        t_emb = self.embeder(x, t)
+        
+        skips = []       
+        for layer in self.down_layers:
+            x, _ = layer(x, t_emb)
+            skips.append(x)
+        # skips = skips[::-1]
+        
+        x, _ = self.bottleneck(x, t_emb) 
+        
+        for layer in self.up_layers:
+            skip = skips.pop()
+            x = x + skip  # Suma de skip connection -- alternativa: concatenar
+            x, _ = layer(x, t_emb)
+        return self.conv_out(x)
          
