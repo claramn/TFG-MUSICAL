@@ -9,3 +9,5 @@ __pycache__
 .idea
 logs
 *.log
+src/utils/__pycache__/*
+
