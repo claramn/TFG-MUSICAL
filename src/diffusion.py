@@ -119,9 +119,9 @@ class DiffusionModel(nn.Module):
         # self.conv_out = nn.Conv2d(channels[1], output_channels, kernel_size=3, padding=1)
 
         self.conv_out = nn.Sequential(
-            nn.GroupNorm(norm_groups, channels[1] * 2),
+            nn.GroupNorm(norm_groups, channels[1]),
             nn.ReLU(),
-            nn.Conv2d(2*channels[1], output_channels, kernel_size=3, padding=1),
+            nn.Conv2d(channels[1], output_channels, kernel_size=3, padding=1),
         )
         
         self.embeder = embedder
