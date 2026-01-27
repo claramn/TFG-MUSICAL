@@ -4,8 +4,6 @@ import math
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
-
 class Scheduler(nn.Module):
     def __init__(self, num_epochs, device, beta_init=1e-4, beta_finish=0.02):
         super().__init__()
@@ -176,6 +174,7 @@ class DiffusionModel(nn.Module):
         
         for layer in self.up_layers:
             skip = skips.pop()
+            # TODO en principio es mas comun concatenar skips
             x = x + skip  # Suma de skip connection -- alternativa: concatenar
             x, _ = layer(x, t_emb)
         return self.conv_out(x)

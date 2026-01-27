@@ -13,3 +13,6 @@ src/utils/__pycache__/**
 src/utils/__pycache__/models.cpython-311.pyc
 src/utils/__pycache__/audio_utils.cpython-311.pyc
 src\utils\__pycache__\**
+src/utils/__pycache__/audio_utils.cpython-311.pyc
+
+src/utils/__pycache__/**
