@@ -129,7 +129,7 @@ class DiffusionModel(nn.Module):
 
         
     def forward(self, x, t):
-        return self.foward_withskip(x, t)
+        return self.forward_withres(x, t)
     
     def forward_nores(self, x, t):
         B, C, H, W = x.shape # batch, canales, altura, anchura
@@ -158,7 +158,7 @@ class DiffusionModel(nn.Module):
         x = self.relu(x)
         return self.conv_out(x)
     
-    def foward_withskip(self, x, t):
+    def forward_withskip(self, x, t):
         B, C, H, W = x.shape # batch, canales, altura, anchura
         
         x = self.conv_in(x)
