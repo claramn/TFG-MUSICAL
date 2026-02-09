@@ -30,5 +30,7 @@ Puesto que tenemos labels comunes para los datasets de entrenamiento, podriamos 
 
 * [Paper de lo anterior](https://openaccess.thecvf.com/content/CVPR2022/papers/Rombach_High-Resolution_Image_Synthesis_With_Latent_Diffusion_Models_CVPR_2022_paper.pdf)
 
+* [Github de lo anterior](https://github.com/CompVis/latent-diffusion)
+
 * [VQ-VAE](https://proceedings.neurips.cc/paper_files/paper/2017/file/7a98af17e63a0ac09ce2e96d03992fbc-Paper.pdf)
 
