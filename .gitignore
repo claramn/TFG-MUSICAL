@@ -7,3 +7,5 @@ __pycache__
 .idea
 logs
 *.log
+env-musical-serious-business/
+notebooks/04_MINST_Diffusion.ipynb

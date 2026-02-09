@@ -173,7 +173,7 @@ class Decoder(nn.Module):
         Hace q las redes sean mas estables al entrenar, evita ssaturaciones 
         """
 
-      #  current_size = expected_size    #empieza en rev_sizes[0]
+        current_size = expected_size    #empieza en rev_sizes[0]
 
         for i in range(1, len(rev_sizes)):
             target = rev_sizes[i]  # el tamaño que queremos alcanzar en esta capa
