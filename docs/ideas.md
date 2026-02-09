@@ -21,12 +21,14 @@ Puesto que tenemos labels comunes para los datasets de entrenamiento, podriamos 
     [github de otra implementacion](https://github.com/yoyolicoris/music-spectrogram-diffusion-pytorch) -> también tiene datasets interesantes
     -> Para generar cada chunk de audio (5s) emplean el chunk anterior a modo de contexto para que las transiciones sean suaves, puede ser una solución a lo que comentamos de cortes
 
-* [](https://towardsdatascience.com/diffusion-model-from-scratch-in-pytorch-ddpm-9d9760528946/)
-* [](https://medium.com/@meghavalgi/how-to-build-a-diffusion-model-from-scratch-in-python-complete-guide-4f7793c3c711)
+* [ejemplo difusión](https://towardsdatascience.com/diffusion-model-from-scratch-in-pytorch-ddpm-9d9760528946/)
+* [ejemplo difusión](https://medium.com/@meghavalgi/how-to-build-a-diffusion-model-from-scratch-in-python-complete-guide-4f7793c3c711)
 
-* [](https://medium.com/@meghavalgi/bringing-text-to-life-fine-tuning-stable-diffusion-02ed7c75a83f)
+* [más difusión](https://medium.com/@meghavalgi/bringing-text-to-life-fine-tuning-stable-diffusion-02ed7c75a83f)
 
 * [DALL-E 3: Latent diffusion in compressed spaces for efficiency.](https://medium.com/@kdk199604/latent-diffusion-model-efficient-high-resolution-image-synthesis-without-compromise-1bec1bee5f8b)
+
+* [Paper de lo anterior](https://openaccess.thecvf.com/content/CVPR2022/papers/Rombach_High-Resolution_Image_Synthesis_With_Latent_Diffusion_Models_CVPR_2022_paper.pdf)
 
 * [VQ-VAE](https://proceedings.neurips.cc/paper_files/paper/2017/file/7a98af17e63a0ac09ce2e96d03992fbc-Paper.pdf)
 
