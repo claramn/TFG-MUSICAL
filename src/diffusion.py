@@ -55,20 +55,43 @@ class Embeder(nn.Module):
     
     
 class DummyLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, norm_groups, stride=1, size_out=None):
+    def __init__(self, in_channels, out_channels, norm_groups, time_dim, kernel_size=3, skip=False, stride=1, size_out=None):
         super().__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, 3, padding=1, stride=stride),
+            nn.Conv2d(in_channels, out_channels, kernel_size, padding=(kernel_size-1)//2, stride=stride),
             nn.GroupNorm(norm_groups, out_channels),
             nn.ReLU()
         )
         self.res_conv = nn.Conv2d(out_channels, out_channels, 3, padding=1)
         self.size_out = size_out
+        
+        self.time_proj = nn.Linear(time_dim, out_channels)
+        
+        self.skip_conv = None
+        if skip:
+            self.skip_conv = nn.Conv2d(in_channels, out_channels, 1, stride=stride) # convolucion para adaptar el skip a los canales de salida de la capa
+        
 
     def forward(self, x, t_emb):
         out = self.conv(x)
         # res = self.res_conv(out)
+        
+        t = self.time_proj(t_emb)
+        t = t[:, :, None, None] # reformateamos t para que tenga las mismas dimensiones que out
+        out = out + t
+        
+        out = self.res_conv(out) # residual
+        
+        skip = x
+        if self.skip_conv is not None:
+            skip = self.skip_conv(x) # adaptamos el skip a los canales de salida de la capa
+        out = out + skip # sumamos el skip a la salida de la capa
+        
+        # no se si en necesario:
+        out = nn.ReLU()(out)
+        
         if self.size_out is not None:
+            out = nn.functional.interpolate(out, size=self.size_out, mode="bilinear", align_corners=False)
         
         return out, x
 
@@ -134,7 +157,7 @@ class DiffusionModel(nn.Module):
         self.embeder = embedder
         self.down_layers = down_layers
         self.up_layers = up_layers
-        self.bottleneck = bottleneck or nn.AdaptiveAvgPool2d((layer_channels[0], layer_channels[1]))
+        self.bottleneck = bottleneck or nn.Identity() # si no se proporciona un bottleneck, se usa una capa identidad
         
     def forward(self, x, t):
         return self.true_forward(x, t)
@@ -157,10 +180,12 @@ class DiffusionModel(nn.Module):
         for i, layer in enumerate(self.up_layers):
             skip = skips.pop() # obtiene el skip correspondiente a la capa
             if skip is not None:
-                if skip.shape[1] == x.shape[1]: # si el skip tiene el mismo número de canales que x, lo sumamos
+                if skip.shape[2:] == x.shape[2:]: # si el skip tiene el mismo número de canales que x, lo sumamos
                     x = torch.cat([x, skip], dim=1) # concatenamos el skip a la entrada de la capa de upsampling
+                    # x = x + skip # sumamos el skip a la entrada de la capa de upsampling
                 else: # si el skip tiene un número diferente de canales, lo adaptamos con una convolución y luego lo sumamos
                     print(f'ERROR: skip shape {skip.shape} != x shape {x.shape}')            
+                    
             x, _ = layer(x, t_emb) # procesa x con la capa de upsampling
             
         return self.conv_out(x) # adapta el tamaño de x a los canales de salida  
