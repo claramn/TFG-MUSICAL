@@ -51,7 +51,8 @@ class Embeder(nn.Module):
     def forward(self, t):
         # t = t.long().view(-1) esto hace que t sea un tensor
         embeds = self.embeddings[t].to(self.device)
-        return embeds[:, :, None, None]
+        # return embeds[:, :, None, None]
+        return embeds
     
     
 class DummyLayer(nn.Module):
@@ -62,14 +63,15 @@ class DummyLayer(nn.Module):
             nn.GroupNorm(norm_groups, out_channels),
             nn.ReLU()
         )
-        self.res_conv = nn.Conv2d(out_channels, out_channels, 3, padding=1)
+        self.res_conv = nn.Conv2d(out_channels, out_channels, 3, padding=1, stride=stride)
         self.size_out = size_out
         
         self.time_proj = nn.Linear(time_dim, out_channels)
+        self.channel_proj = nn.Conv2d(in_channels, out_channels, 1)
         
         self.skip_conv = None
         if skip:
-            self.skip_conv = nn.Conv2d(in_channels, out_channels, 1, stride=stride) # convolucion para adaptar el skip a los canales de salida de la capa
+            self.skip_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride)  # Adapta los canales del skip a los canales de salida de la capa
         
 
     def forward(self, x, t_emb):
@@ -82,10 +84,12 @@ class DummyLayer(nn.Module):
         
         out = self.res_conv(out) # residual
         
-        skip = x
+        skip = None
         if self.skip_conv is not None:
             skip = self.skip_conv(x) # adaptamos el skip a los canales de salida de la capa
-        out = out + skip # sumamos el skip a la salida de la capa
+            if out.shape[1] != skip.shape[1]:  # Ensure channel dimensions match
+                skip = self.channel_proj(skip)
+            out = out + skip  # sumamos el skip a la salida de la capa
         
         # no se si en necesario:
         out = nn.ReLU()(out)
@@ -93,7 +97,7 @@ class DummyLayer(nn.Module):
         if self.size_out is not None:
             out = nn.functional.interpolate(out, size=self.size_out, mode="bilinear", align_corners=False)
         
-        return out, x
+        return out, skip
 
 class NoopLayer(nn.Module):
     def __init__(self):
