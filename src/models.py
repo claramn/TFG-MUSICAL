@@ -201,8 +201,31 @@ class VAE(nn.Module):
 
         return recon, kld
 
+    """
     def forward(self, x):
         return self.calculate_ELBO_terms(x)
+    """ 
+
+    """
+    esta funcion define como pasa el dato por el modelo cuando llamamos a model(x)
+    en teoria deberia ir mejor pq no nos atamos a mse dentro del modelo y podemos montar una loss d audio meojor luego en el nb
+    """
+    def forward(self, x):
+        """
+        B: batch size
+        C: number of channels (normalmente 1 en espectrogramas)
+        H: height de la imagen (frecuencias en el caso de espectrogramas)
+        W: width de la imagen (tiempo en el caso de espectrogramas)
+        """
+
+        B,C,H,W = x.shape
+        _,mean, log_var = self.encoder(x)
+        log_var = torch.clamp(log_var, min=-20, max=20)
+        z = self.reparameterization(mean, log_var)
+        x_hat = self.decoder(z) #en vez d muestrear directamente de la normal, pasamos el z reparameterizado por el decoder para obtener la reconstrucción, que es lo que realmente nos interesa en el forward. El cálculo de ELBO lo hacemos en la función loss_function, que se llama desde el training loop
+        x_hat = adjust_shape(x_hat, (H, W), pad_mode='reflect')
+        kld = self.compute_kld(mean, log_var)
+        return x_hat, kld
 
     def loss_function(self, recon, kld):
         # We return -ELBO, since we'retrying to maximize ELBO
