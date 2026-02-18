@@ -12,6 +12,7 @@ tmb se le podría pasar audio y que lo convierta en el instrumento deseado
 una vez generado un sonido, tener una interfaz estilo arbol o plano para poder explorar otros sonidos cercanos en su espacio latente
 
 Puesto que tenemos labels comunes para los datasets de entrenamiento, podriamos hacer que la difusion fuera condicionada
+podríamos probar un modelo de difución 1d para generar audio directamente a ver que pasa
 
 ## Documentos interesantes
 * [A survey of deep learning audio generation methods](https://arxiv.org/pdf/2406.00146):
@@ -34,3 +35,4 @@ Puesto que tenemos labels comunes para los datasets de entrenamiento, podriamos 
 
 * [VQ-VAE](https://proceedings.neurips.cc/paper_files/paper/2017/file/7a98af17e63a0ac09ce2e96d03992fbc-Paper.pdf)
 
+* https://medium.com/data-science/diffusion-model-from-scratch-in-pytorch-ddpm-9d9760528946

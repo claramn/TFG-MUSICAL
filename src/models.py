@@ -1,7 +1,8 @@
 import torch.nn as nn
 from torch.distributions import Normal
 from src.utils.models import *
-
+import torch.nn.functional as F
+import torch
 
 class Encoder(nn.Module):
     def __init__(self, input_size, latent_dim, channels, variational=False):
