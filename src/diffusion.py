@@ -45,28 +45,32 @@ class Embeder(nn.Module):
         embeddings[:, 0::2] = torch.sin(position * div)
         embeddings[:, 1::2] = torch.cos(position * div)
         self.embeddings = embeddings
+        self.device = device
 
 
-    def forward(self, x, t):
+    def forward(self, t):
         # t = t.long().view(-1) esto hace que t sea un tensor
-        embeds = self.embeddings[t].to(x.device)
+        embeds = self.embeddings[t].to(self.device)
         return embeds[:, :, None, None]
     
     
 class DummyLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, norm_groups):
+    def __init__(self, in_channels, out_channels, norm_groups, stride=1, size_out=None):
         super().__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, 3, padding=1),
+            nn.Conv2d(in_channels, out_channels, 3, padding=1, stride=stride),
             nn.GroupNorm(norm_groups, out_channels),
             nn.ReLU()
         )
         self.res_conv = nn.Conv2d(out_channels, out_channels, 3, padding=1)
+        self.size_out = size_out
 
     def forward(self, x, t_emb):
         out = self.conv(x)
-        res = self.res_conv(out)
-        return out, res
+        # res = self.res_conv(out)
+        if self.size_out is not None:
+        
+        return out, x
 
 class NoopLayer(nn.Module):
     def __init__(self):
@@ -75,9 +79,11 @@ class NoopLayer(nn.Module):
     def forward(self, x, t_emb):
         return x, x
 
+
+
 class DiffusionModel(nn.Module):
     def __init__(self, 
-            channels:list, 
+            layer_channels:tuple[int, int], # canales de entrada y salida de las capas de downsampling y upsampling
             norm_groups:int, 
             embedder:nn.Module, 
             down_layers:list[nn.Module],
@@ -87,49 +93,77 @@ class DiffusionModel(nn.Module):
             output_channels=1
         ):
         '''
-            - input_channels: canales de entrada (1 para escala de grises, 3 para RGB)
-            - output_channels: canales de salida (1 para escala de grises, 3 para RGB)
-            - layers: capas que van a procesar a la entrada??, la clase aun no esta implementada 
-                -> la entrada coincide con channels 0
-                -> la salida coincide con channels 1
-                * down_layers: capas de downsampling
+            - input_channels: canales de entrada 
+            - output_channels: canales de salida
+            - layer_chanels: 
+                -> 0: canales de salida a las capas de downsampling
+                -> 1: canales de entrada de las capas de downsampling
+            - layers
+                * down_layers: capas de downsampling 
                 * up_layers: capas de upsampling
+                * bottleneck: capa que va a procesar el resultado de las capas de downsampling antes de pasarlo a las capas de upsampling
+                    - transforma lc[0] a lc[1]
             - embedder: objeto que va a hacer el embedding del tiempo
             - channels: 
-                0. canales de salida de la primera convolucion = canales de entrada a las layers
-                1. canales de salida de las layers = canales de entrada de la convolucion de salida
+                0. canales de salida de la primera convolucion
+                1. canales de salida de la ultima convolucion
         '''
         
         super().__init__()
         self.relu = nn.ReLU()
-        self.channels = channels
+        self.channels = layer_channels
         
         # aparentemente esto va de hacer redes convolucionales
         # self.conv_in = nn.Conv2d(input_channels, channels[0], kernel_size=3, padding=1),
 
         
         self.conv_in = nn.Sequential(
-            nn.Conv2d(input_channels, channels[0], kernel_size=3, padding=1),
-            nn.GroupNorm(norm_groups, channels[0]),
+            nn.Conv2d(input_channels, layer_channels[0], kernel_size=3, padding=1),
+            nn.GroupNorm(norm_groups, layer_channels[0]),
             nn.ReLU()
         )
         
         # self.conv_out = nn.Conv2d(channels[1], output_channels, kernel_size=3, padding=1)
 
         self.conv_out = nn.Sequential(
-            nn.GroupNorm(norm_groups, channels[1]),
+            nn.GroupNorm(norm_groups, layer_channels[1]),
             nn.ReLU(),
-            nn.Conv2d(channels[1], output_channels, kernel_size=3, padding=1),
+            nn.Conv2d(layer_channels[1], output_channels, kernel_size=3, padding=1),
         )
         
         self.embeder = embedder
         self.down_layers = down_layers
-        self.up_layers = up_layers or nn.NoopLayer()
-        self.bottleneck = bottleneck or nn.NoopLayer()
-
+        self.up_layers = up_layers
+        self.bottleneck = bottleneck or nn.AdaptiveAvgPool2d((layer_channels[0], layer_channels[1]))
         
     def forward(self, x, t):
-        return self.forward_withres(x, t)
+        return self.true_forward(x, t)
+    
+    def true_forward(self, x, t):
+        # B, C, H, W = x.shape # batch, canales, altura, anchura
+        
+        x = self.conv_in(x) # adapta el tamaño de x a los canales de entrada de las capas
+        t_emb = self.embeder(t) # obtiene el embedding del tiempo
+        skips = []
+        
+        ''' Las capas son las encargadas de decidir si aplican o no el skip o los residuales'''
+        
+        for layer in self.down_layers:
+            x, s = layer(x, t_emb) # procesa x con la capa y devuelve el resultado y el skip (si la capa lo tiene)
+            skips.append(s) # guarda el skip para usarlo en las capas de upsampling
+            
+        x, _ = self.bottleneck(x, t_emb) # procesa el resultado de las capas de downsampling con el bottleneck
+        
+        for i, layer in enumerate(self.up_layers):
+            skip = skips.pop() # obtiene el skip correspondiente a la capa
+            if skip is not None:
+                if skip.shape[1] == x.shape[1]: # si el skip tiene el mismo número de canales que x, lo sumamos
+                    x = torch.cat([x, skip], dim=1) # concatenamos el skip a la entrada de la capa de upsampling
+                else: # si el skip tiene un número diferente de canales, lo adaptamos con una convolución y luego lo sumamos
+                    print(f'ERROR: skip shape {skip.shape} != x shape {x.shape}')            
+            x, _ = layer(x, t_emb) # procesa x con la capa de upsampling
+            
+        return self.conv_out(x) # adapta el tamaño de x a los canales de salida  
     
     def forward_nores(self, x, t):
         B, C, H, W = x.shape # batch, canales, altura, anchura
