@@ -74,7 +74,7 @@ class DummyLayer(nn.Module):
             self.skip_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride)  # Adapta los canales del skip a los canales de salida de la capa
         
 
-    def forward(self, x, t_emb):
+    def forward_2(self, x, t_emb):
         out = self.conv(x)
         # res = self.res_conv(out)
         
@@ -97,6 +97,26 @@ class DummyLayer(nn.Module):
         if self.size_out is not None:
             out = nn.functional.interpolate(out, size=self.size_out, mode="bilinear", align_corners=False)
         
+        return out, skip
+    
+    def forward(self, x, t_emb):
+        out = self.conv(x)
+        t = self.time_proj(t_emb)
+        t = t[:, :, None, None]
+        out = out + t
+        out = self.res_conv(out)
+
+        skip = None
+        if self.skip_conv is not None:
+            # sin adaprtar el skip, lo sumamos directamente
+            skip = self.skip_conv(x)
+            out = out + skip
+
+        out = nn.ReLU()(out)
+
+        if self.size_out is not None:
+            out = nn.functional.interpolate(out, size=self.size_out, mode="bilinear", align_corners=False)
+
         return out, skip
 
 class NoopLayer(nn.Module):
@@ -162,11 +182,8 @@ class DiffusionModel(nn.Module):
         self.down_layers = down_layers
         self.up_layers = up_layers
         self.bottleneck = bottleneck or nn.Identity() # si no se proporciona un bottleneck, se usa una capa identidad
-        
-    def forward(self, x, t):
-        return self.true_forward(x, t)
     
-    def true_forward(self, x, t):
+    def forward(self, x, t):
         # B, C, H, W = x.shape # batch, canales, altura, anchura
         
         x = self.conv_in(x) # adapta el tamaño de x a los canales de entrada de las capas
@@ -193,52 +210,3 @@ class DiffusionModel(nn.Module):
             x, _ = layer(x, t_emb) # procesa x con la capa de upsampling
             
         return self.conv_out(x) # adapta el tamaño de x a los canales de salida  
-    
-    def forward_nores(self, x, t):
-        B, C, H, W = x.shape # batch, canales, altura, anchura
-        x = self.conv_in(x)
-        t_emb = self.embeder(x, t)
-        for layer in self.down_layers:
-            x, r = layer(x, t_emb)
-        for layer in self.up_layers:
-            x, r = layer(x, t_emb)
-        return self.conv_out(x)
-        
-    def forward_withres(self, x, t):
-        B, C, H, W = x.shape # batch, canales, altura, anchura
-        
-        x = self.conv_in(x)
-        t_emb = self.embeder(x, t)
-        residuals = []
-        for layer in self.down_layers:
-            x, r = layer(x, t_emb)
-            residuals.append(r)
-        residuals = residuals[::-1] 
-        x, _ = self.bottleneck(x, t_emb)
-        # residuals.append(r)
-        for layer in self.up_layers:
-            x = torch.concat((layer(x, t_emb)[0], residuals.pop()), dim=1)
-        x = self.relu(x)
-        return self.conv_out(x)
-    
-    def forward_withskip(self, x, t):
-        B, C, H, W = x.shape # batch, canales, altura, anchura
-        
-        x = self.conv_in(x)
-        t_emb = self.embeder(x, t)
-        
-        skips = []       
-        for layer in self.down_layers:
-            x, _ = layer(x, t_emb)
-            skips.append(x)
-        # skips = skips[::-1]
-        
-        x, _ = self.bottleneck(x, t_emb) 
-        
-        for layer in self.up_layers:
-            skip = skips.pop()
-            # TODO en principio es mas comun concatenar skips
-            x = x + skip  # Suma de skip connection -- alternativa: concatenar
-            x, _ = layer(x, t_emb)
-        return self.conv_out(x)
-         
