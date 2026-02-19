@@ -100,17 +100,17 @@ class DummyLayer(nn.Module):
         return out, skip
     
     def forward(self, x, t_emb):
+        
+        skip = None
+        if self.skip_conv is not None:
+            # sin adaprtar el skip, lo sumamos directamente
+            skip = self.skip_conv(x)
+        
         out = self.conv(x)
         t = self.time_proj(t_emb)
         t = t[:, :, None, None]
         out = out + t
         out = self.res_conv(out)
-
-        skip = None
-        if self.skip_conv is not None:
-            # sin adaprtar el skip, lo sumamos directamente
-            skip = self.skip_conv(x)
-            out = out + skip
 
         out = nn.ReLU()(out)
 
