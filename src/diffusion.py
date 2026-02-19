@@ -202,9 +202,12 @@ class DiffusionModel(nn.Module):
             skip = skips.pop() # obtiene el skip correspondiente a la capa
             if skip is not None:
                 if skip.shape[2:] == x.shape[2:]: # si el skip tiene el mismo número de canales que x, lo sumamos
+                    # TODO arreglar esto en las capas 
                     x = torch.cat([x, skip], dim=1) # concatenamos el skip a la entrada de la capa de upsampling
                     # x = x + skip # sumamos el skip a la entrada de la capa de upsampling
                 else: # si el skip tiene un número diferente de canales, lo adaptamos con una convolución y luego lo sumamos
+                    skip = nn.functional.interpolate(skip, size=x.shape[2:], mode="bilinear", align_corners=False)
+                    x = torch.cat([x, skip], dim=1) # concatenamos el skip a la entrada de la capa de upsampling
                     print(f'ERROR: skip shape {skip.shape} != x shape {x.shape}')            
                     
             x, _ = layer(x, t_emb) # procesa x con la capa de upsampling
