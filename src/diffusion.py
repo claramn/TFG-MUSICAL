@@ -71,7 +71,7 @@ class DummyLayer(nn.Module):
         
         self.skip_conv = None
         if skip:
-            self.skip_conv = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride)  # Adapta los canales del skip a los canales de salida de la capa
+            self.skip_conv = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1)  # Adapta los canales del skip a los canales de salida de la capa
         
 
     def forward_2(self, x, t_emb):
@@ -200,6 +200,8 @@ class DiffusionModel(nn.Module):
         
         for i, layer in enumerate(self.up_layers):
             skip = skips.pop() # obtiene el skip correspondiente a la capa
+            # print(f"up[{i}] - x: {x.shape}, skip: {skip.shape if skip is not None else None}")
+
             if skip is not None:
                 if skip.shape[2:] == x.shape[2:]: # si el skip tiene el mismo número de canales que x, lo sumamos
                     # TODO arreglar esto en las capas 
@@ -208,8 +210,12 @@ class DiffusionModel(nn.Module):
                 else: # si el skip tiene un número diferente de canales, lo adaptamos con una convolución y luego lo sumamos
                     skip = nn.functional.interpolate(skip, size=x.shape[2:], mode="bilinear", align_corners=False)
                     x = torch.cat([x, skip], dim=1) # concatenamos el skip a la entrada de la capa de upsampling
-                    print(f'ERROR: skip shape {skip.shape} != x shape {x.shape}')            
+                    # print(f'ERROR: skip shape {skip.shape} != x shape {x.shape}')
+                # print(f"up[{i}] - x after cat: {x.shape}")
+        
                     
             x, _ = layer(x, t_emb) # procesa x con la capa de upsampling
+            # print(f"up[{i}] - x after layer: {x.shape}")
+
             
         return self.conv_out(x) # adapta el tamaño de x a los canales de salida  
