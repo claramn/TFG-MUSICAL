@@ -14,6 +14,24 @@ una vez generado un sonido, tener una interfaz estilo arbol o plano para poder e
 Puesto que tenemos labels comunes para los datasets de entrenamiento, podriamos hacer que la difusion fuera condicionada
 podríamos probar un modelo de difución 1d para generar audio directamente a ver que pasa
 
+Hacer difusion sobre el espacio latente del VAE
+
+# Ideas para optimizar difusion [Fuente](https://www.felixsanz.dev/articles/ultimate-guide-to-optimizing-stable-diffusion-xl)
+* Para el tema de la memoria: enable_model_cpu_offload() mueve a memoria solamente el modelo que sea necesario (aumenta un poco el tiempo pero podemos hacer el batch mas grande?) -> esta es para cuando hagamos difusion sobre el espacio latente
+
+* hay una cosa que se llama stable fast 
+
+* hay una cosa que se llama DeepChache que se supone que esta perfe
+
+* compilar modelo usando onediff
+
+* VAE slicing: 
+
+* IMPORTANTE: usar el fp16
+
+
+
+
 ## Documentos interesantes
 * [A survey of deep learning audio generation methods](https://arxiv.org/pdf/2406.00146):
 
@@ -36,3 +54,7 @@ podríamos probar un modelo de difución 1d para generar audio directamente a ve
 * [VQ-VAE](https://proceedings.neurips.cc/paper_files/paper/2017/file/7a98af17e63a0ac09ce2e96d03992fbc-Paper.pdf)
 
 * https://medium.com/data-science/diffusion-model-from-scratch-in-pytorch-ddpm-9d9760528946
+
+* [Optimizar difusion](https://www.felixsanz.dev/articles/ultimate-guide-to-optimizing-stable-diffusion-xl)
+
+* [HF DifusionPipeline](https://huggingface.co/docs/diffusers/using-diffusers/custom_pipeline_overview)

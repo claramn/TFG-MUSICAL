@@ -60,8 +60,8 @@ class DummyLayer(nn.Module):
         super().__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size, padding=(kernel_size-1)//2, stride=stride),
-            nn.GroupNorm(norm_groups, out_channels),
-            nn.ReLU()
+            nn.GroupNorm(norm_groups, out_channels), ###### TODO se puede cambiar por nn.BatchNorm2d(out_channels) para mayor eficiencia
+            nn.ReLU() ###### TODO se puede cambiar por nn.SiLU() para mayor eficiencia
         )
         self.res_conv = nn.Conv2d(out_channels, out_channels, 3, padding=1, stride=stride)
         self.size_out = size_out
@@ -71,10 +71,25 @@ class DummyLayer(nn.Module):
         
         self.skip_conv = None
         if skip:
-            self.skip_conv = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1)  # Adapta los canales del skip a los canales de salida de la capa
+            self.skip_conv = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=stride)  # Adapta los canales del skip a los canales de salida de la capa
         
 
     def forward_2(self, x, t_emb):
+        
+        ######## TODO
+        ''' Posible mejora: guardar el skip fuera de la capa y aqui solo devolver x downsampleada/upsampleada'''
+        ''' 
+            skip = x
+            out = conv_down(x)
+
+
+            
+            x = cat([x, skip])
+            x = conv_up(x)
+
+        '''
+
+
         out = self.conv(x)
         # res = self.res_conv(out)
         
@@ -181,7 +196,7 @@ class DiffusionModel(nn.Module):
         self.embeder = embedder
         self.down_layers = down_layers
         self.up_layers = up_layers
-        self.bottleneck = bottleneck or nn.Identity() # si no se proporciona un bottleneck, se usa una capa identidad
+        self.bottleneck = bottleneck or NoopLayer() # si no se proporciona un bottleneck, se usa una capa identidad
     
     def forward(self, x, t):
         # B, C, H, W = x.shape # batch, canales, altura, anchura
@@ -209,6 +224,10 @@ class DiffusionModel(nn.Module):
                     # x = x + skip # sumamos el skip a la entrada de la capa de upsampling
                 else: # si el skip tiene un número diferente de canales, lo adaptamos con una convolución y luego lo sumamos
                     skip = nn.functional.interpolate(skip, size=x.shape[2:], mode="bilinear", align_corners=False)
+
+                    ##### TODO
+                    ''' Posible mejora: nn.ConvTranspose2d(in_ch, out_ch, kernel_size=2, stride=2) en vez de interpolate'''
+
                     x = torch.cat([x, skip], dim=1) # concatenamos el skip a la entrada de la capa de upsampling
                     # print(f'ERROR: skip shape {skip.shape} != x shape {x.shape}')
                 # print(f"up[{i}] - x after cat: {x.shape}")
