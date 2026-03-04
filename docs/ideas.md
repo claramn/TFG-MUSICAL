@@ -58,3 +58,5 @@ Hacer difusion sobre el espacio latente del VAE
 * [Optimizar difusion](https://www.felixsanz.dev/articles/ultimate-guide-to-optimizing-stable-diffusion-xl)
 
 * [HF DifusionPipeline](https://huggingface.co/docs/diffusers/using-diffusers/custom_pipeline_overview)
+
+* [como usar el sclaer](https://wandb.ai/wandb_fc/tips/reports/How-To-Use-GradScaler-in-PyTorch--VmlldzoyMTY5MDA5)

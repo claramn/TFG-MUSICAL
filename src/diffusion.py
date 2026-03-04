@@ -56,63 +56,31 @@ class Embeder(nn.Module):
     
     
 class DummyLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, norm_groups, time_dim, kernel_size=3, skip=False, stride=1, size_out=None):
+    def __init__(self, in_channels, out_channels, norm_groups, time_dim, kernel_size=3, skip=False, stride=1):
         super().__init__()
+        
+        if stride < 0:
+            stride = -stride
+            nnConv = nn.ConvTranspose2d
+        else:
+            nnConv = nn.Conv2d
+                    
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size, padding=(kernel_size-1)//2, stride=stride),
-            nn.GroupNorm(norm_groups, out_channels), ###### TODO se puede cambiar por nn.BatchNorm2d(out_channels) para mayor eficiencia
-            nn.ReLU() ###### TODO se puede cambiar por nn.SiLU() para mayor eficiencia
+            nnConv(in_channels, out_channels, kernel_size, padding=(kernel_size-1)//2, stride=stride),
+            nn.BatchNorm2d(out_channels), ## EN PRINCIPIO ES MEJOR QUE GROUPNORM
+            # nn.GroupNorm(norm_groups, out_channels), ###### TODO se puede cambiar por nn.BatchNorm2d(out_channels) para mayor eficiencia
+            # nn.ReLU() ###### TODO se puede cambiar por nn.SiLU() para mayor eficiencia
+            nn.SiLU()
         )
-        self.res_conv = nn.Conv2d(out_channels, out_channels, 3, padding=1, stride=stride)
-        self.size_out = size_out
+
+        self.res_conv = nnConv(out_channels, out_channels, 3, padding=1, stride=stride)
         
         self.time_proj = nn.Linear(time_dim, out_channels)
-        self.channel_proj = nn.Conv2d(in_channels, out_channels, 1)
+        self.channel_proj = nnConv(in_channels, out_channels, 1)
         
         self.skip_conv = None
         if skip:
-            self.skip_conv = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=stride)  # Adapta los canales del skip a los canales de salida de la capa
-        
-
-    def forward_2(self, x, t_emb):
-        
-        ######## TODO
-        ''' Posible mejora: guardar el skip fuera de la capa y aqui solo devolver x downsampleada/upsampleada'''
-        ''' 
-            skip = x
-            out = conv_down(x)
-
-
-            
-            x = cat([x, skip])
-            x = conv_up(x)
-
-        '''
-
-
-        out = self.conv(x)
-        # res = self.res_conv(out)
-        
-        t = self.time_proj(t_emb)
-        t = t[:, :, None, None] # reformateamos t para que tenga las mismas dimensiones que out
-        out = out + t
-        
-        out = self.res_conv(out) # residual
-        
-        skip = None
-        if self.skip_conv is not None:
-            skip = self.skip_conv(x) # adaptamos el skip a los canales de salida de la capa
-            if out.shape[1] != skip.shape[1]:  # Ensure channel dimensions match
-                skip = self.channel_proj(skip)
-            out = out + skip  # sumamos el skip a la salida de la capa
-        
-        # no se si en necesario:
-        out = nn.ReLU()(out)
-        
-        if self.size_out is not None:
-            out = nn.functional.interpolate(out, size=self.size_out, mode="bilinear", align_corners=False)
-        
-        return out, skip
+            self.skip_conv = nnConv(in_channels, in_channels, kernel_size=1, stride=stride)  # Adapta los canales del skip a los canales de salida de la capa
     
     def forward(self, x, t_emb):
         
@@ -127,10 +95,7 @@ class DummyLayer(nn.Module):
         out = out + t
         out = self.res_conv(out)
 
-        out = nn.ReLU()(out)
-
-        if self.size_out is not None:
-            out = nn.functional.interpolate(out, size=self.size_out, mode="bilinear", align_corners=False)
+        out = nn.SiLU()(out)
 
         return out, skip
 
@@ -140,8 +105,6 @@ class NoopLayer(nn.Module):
 
     def forward(self, x, t_emb):
         return x, x
-
-
 
 class DiffusionModel(nn.Module):
     def __init__(self, 
@@ -199,6 +162,8 @@ class DiffusionModel(nn.Module):
         self.bottleneck = bottleneck or NoopLayer() # si no se proporciona un bottleneck, se usa una capa identidad
     
     def forward(self, x, t):
+        og_size = x.shape[2:]
+        
         # B, C, H, W = x.shape # batch, canales, altura, anchura
         
         x = self.conv_in(x) # adapta el tamaño de x a los canales de entrada de las capas
@@ -218,15 +183,21 @@ class DiffusionModel(nn.Module):
             # print(f"up[{i}] - x: {x.shape}, skip: {skip.shape if skip is not None else None}")
 
             if skip is not None:
+                # TODO getionar esto
                 if skip.shape[2:] == x.shape[2:]: # si el skip tiene el mismo número de canales que x, lo sumamos
                     # TODO arreglar esto en las capas 
                     x = torch.cat([x, skip], dim=1) # concatenamos el skip a la entrada de la capa de upsampling
                     # x = x + skip # sumamos el skip a la entrada de la capa de upsampling
                 else: # si el skip tiene un número diferente de canales, lo adaptamos con una convolución y luego lo sumamos
+                    # TODO borrar:
+                    # print('ha sido necesario interpolar el skip')
+                    # print(f'size_pre: {skip[2:]}')
                     skip = nn.functional.interpolate(skip, size=x.shape[2:], mode="bilinear", align_corners=False)
+                    # print(f'size_post: {skip[2:]}')
 
                     ##### TODO
                     ''' Posible mejora: nn.ConvTranspose2d(in_ch, out_ch, kernel_size=2, stride=2) en vez de interpolate'''
+                    ''' Tmb decia de guardar el skip fuera o algo asi'''
 
                     x = torch.cat([x, skip], dim=1) # concatenamos el skip a la entrada de la capa de upsampling
                     # print(f'ERROR: skip shape {skip.shape} != x shape {x.shape}')
@@ -237,4 +208,7 @@ class DiffusionModel(nn.Module):
             # print(f"up[{i}] - x after layer: {x.shape}")
 
             
-        return self.conv_out(x) # adapta el tamaño de x a los canales de salida  
+        x = self.conv_out(x) # adapta el tamaño de x a los canales de salida  
+        if x.shape[2:] != og_size:
+            x = nn.functional.interpolate(x, size=og_size, mode="bilinear", align_corners=False)
+        return x
