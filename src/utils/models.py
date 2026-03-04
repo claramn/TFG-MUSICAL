@@ -17,6 +17,18 @@ def compute_magnitude_and_phase(stft_spec, normalize=False):
         phase /= MAX_PHASE
     return magnitude, phase
 
+def compute_magnitude_and_phase_sin_cos(stft_spec):
+    ''' Devuelve la fase en seno y coseno'''
+    magnitude = stft_spec.abs().unsqueeze(1)          # (B, 1, F, T)
+    phase = torch.angle(stft_spec)
+    
+    phase_cos = torch.cos(phase).unsqueeze(1)          # (B, 1, F, T) - continuo en [-1, 1]
+    phase_sin = torch.sin(phase).unsqueeze(1)          # (B, 1, F, T) - continuo en [-1, 1]
+    
+    log_mag = torch.log1p(magnitude)                   # comprime rango dinámico
+    
+    return log_mag, phase_cos, phase_sin               # 3 canales
+
 def compute_conv2D_output_size(input_size, kernel_size, stride, padding):
     """
         Returns the output (2D) size of a convolutional layer based on the formula:
