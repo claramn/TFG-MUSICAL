@@ -80,7 +80,7 @@ class DummyLayer(nn.Module):
         
         self.skip_conv = None
         if skip:
-            self.skip_conv = nnConv(in_channels, in_channels, kernel_size=1, stride=stride)  # Adapta los canales del skip a los canales de salida de la capa
+            self.skip_conv = nnConv(in_channels, in_channels, kernel_size=1, stride=1)  # Adapta los canales del skip a los canales de salida de la capa
     
     def forward(self, x, t_emb):
         

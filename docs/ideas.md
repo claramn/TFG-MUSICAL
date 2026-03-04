@@ -60,3 +60,18 @@ Hacer difusion sobre el espacio latente del VAE
 * [HF DifusionPipeline](https://huggingface.co/docs/diffusers/using-diffusers/custom_pipeline_overview)
 
 * [como usar el sclaer](https://wandb.ai/wandb_fc/tips/reports/How-To-Use-GradScaler-in-PyTorch--VmlldzoyMTY5MDA5)
+
+### learning scheduler
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+scheduler_lr = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+
+# al final de cada época
+scheduler_lr.step()
+
+### gradient clipping
+loss.backward()
+torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+optimizer.step()
+
+## mas canales
+c = 128
