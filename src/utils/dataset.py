@@ -52,3 +52,11 @@ def load_raw_waveform(partition, key):
     waveform, sr = torchaudio.load(wav_path)
     return waveform, sr
 
+#filtrar por instrumento 
+def filter_by_instrument(json_data, target_instrument_id):
+    filtered = {}
+    for key, metadata in json_data.items():
+        if metadata["instrument_family"] == target_instrument_id:
+            filtered[key] = metadata
+    return filtered
+
