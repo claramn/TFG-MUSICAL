@@ -19,10 +19,44 @@ INSTRUMENT_ID_2_STR = [
     "synth_lead",   # 9
     "vocal"         # 10
 ]
+INSTRUMENT_STR_2_ID = {name: idx for idx, name in enumerate(INSTRUMENT_ID_2_STR)}
 
 # ------------------------------------------------------------------------------
 # JSON Loading and Processing
 # ------------------------------------------------------------------------------
+
+def resolve_instrument_id(instrument):
+    """
+    Resolve an instrument selector to a numeric NSynth instrument_family id.
+
+    Accepted inputs:
+      - None: no filtering
+      - int: direct instrument id in [0, NUM_INSTRUMENTS-1]
+      - str: instrument family name (e.g. "guitar", "string")
+    """
+    if instrument is None:
+        return None
+
+    if isinstance(instrument, int):
+        if 0 <= instrument < NUM_INSTRUMENTS:
+            return instrument
+        raise ValueError(
+            f"instrument id must be in [0, {NUM_INSTRUMENTS - 1}], got {instrument}"
+        )
+
+    if isinstance(instrument, str):
+        name = instrument.strip().lower()
+        aliases = {
+            "strings": "string",
+            "guitars": "guitar",
+        }
+        name = aliases.get(name, name)
+        if name in INSTRUMENT_STR_2_ID:
+            return INSTRUMENT_STR_2_ID[name]
+        valid = ", ".join(INSTRUMENT_ID_2_STR)
+        raise ValueError(f"Unknown instrument '{instrument}'. Valid names: {valid}")
+
+    raise TypeError("instrument must be None, int, or str")
 
 def load_json(partition):
     """
@@ -36,9 +70,13 @@ def load_json(partition):
 def process_metadata(json_data):
     model_metadata = {}
     for key, metadata in json_data.items():
-        instrument_family = metadata["instrument_family"]
+        instrument_family = int(metadata["instrument_family"])
         one_hot = [int(instrument_family == i) for i in range(NUM_INSTRUMENTS)]
-        model_metadata[key] = {"one_hot_instrument": torch.tensor(one_hot, dtype=torch.float)}
+        model_metadata[key] = {
+            "one_hot_instrument": torch.tensor(one_hot, dtype=torch.float),
+            "instrument_family_id": instrument_family,
+            "instrument_family_str": INSTRUMENT_ID_2_STR[instrument_family],
+        }
 
     
     return model_metadata
@@ -51,12 +89,4 @@ def load_raw_waveform(partition, key):
     wav_path = DATA_PATH / partition / "audio" / f"{key}.wav"
     waveform, sr = torchaudio.load(wav_path)
     return waveform, sr
-
-#filtrar por instrumento 
-def filter_by_instrument(json_data, target_instrument_id):
-    filtered = {}
-    for key, metadata in json_data.items():
-        if metadata["instrument_family"] == target_instrument_id:
-            filtered[key] = metadata
-    return filtered
 
