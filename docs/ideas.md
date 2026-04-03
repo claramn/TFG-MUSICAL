@@ -61,6 +61,8 @@ Hacer difusion sobre el espacio latente del VAE
 
 * [como usar el sclaer](https://wandb.ai/wandb_fc/tips/reports/How-To-Use-GradScaler-in-PyTorch--VmlldzoyMTY5MDA5)
 
+* [Playlist de Deep Learning (para audio) en Phyton](https://www.youtube.com/playlist?list=PL-wATfeyAMNrtbkCNsLcpoAyBBRJZVlnf)
+
 ### learning scheduler
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
 scheduler_lr = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
