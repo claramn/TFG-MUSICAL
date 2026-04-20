@@ -67,10 +67,16 @@ def load_json(partition):
     with open(json_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def process_metadata(json_data):
+def process_metadata(json_data,target_instrument=None):
+    target_id = resolve_instrument_id(target_instrument)
     model_metadata = {}
     for key, metadata in json_data.items():
         instrument_family = int(metadata["instrument_family"])
+        
+        # Si hemos definido un target_id y no coincide, saltamos esta muestra
+        if target_id is not None and instrument_family != target_id:
+            continue
+            
         one_hot = [int(instrument_family == i) for i in range(NUM_INSTRUMENTS)]
         model_metadata[key] = {
             "one_hot_instrument": torch.tensor(one_hot, dtype=torch.float),
@@ -78,7 +84,7 @@ def process_metadata(json_data):
             "instrument_family_str": INSTRUMENT_ID_2_STR[instrument_family],
         }
 
-    
+    print(f"Filtrado completado: {len(model_metadata)} muestras de '{target_instrument}' cargadas.")
     return model_metadata
 
 def load_raw_waveform(partition, key):

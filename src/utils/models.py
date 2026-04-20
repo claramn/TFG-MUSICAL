@@ -3,6 +3,7 @@ from src.utils.models import *
 import torch.nn.functional as F
 import torch
 
+
 class Encoder(nn.Module):
     def __init__(self, input_size, latent_dim, channels, variational=False):
         super().__init__()
@@ -290,3 +291,14 @@ def compute_conv2D_output_size(input_size, kernel_size, stride, padding):
     W_out = (W_in + 2 * padding[1] - kernel_size[1]) // stride[1] + 1
     return (H_out, W_out)
 
+def compute_convTranspose2D_output_size(input_size, kernel_size, stride, padding, output_padding=(0, 0)):
+    """
+    Calcula el tamaño de salida de una capa ConvTranspose2d (Deconvolución).
+    Fórmula: H_out = (H_in - 1) * stride - 2 * padding + kernel_size + output_padding
+    """
+    H_in, W_in = input_size
+    
+    H_out = (H_in - 1) * stride[0] - 2 * padding[0] + kernel_size[0] + output_padding[0]
+    W_out = (W_in - 1) * stride[1] - 2 * padding[1] + kernel_size[1] + output_padding[1]
+    
+    return (H_out, W_out)

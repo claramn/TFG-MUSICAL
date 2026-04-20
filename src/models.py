@@ -124,6 +124,8 @@ class Decoder(nn.Module):
         x = self.decoder(x)
        # print("[DEC FWD] after convT stack:", x.shape)
         return x
+    
+    
 
 
 class AutoEncoder(nn.Module):
@@ -231,3 +233,25 @@ class VAE(nn.Module):
         # We return -ELBO, since we'retrying to maximize ELBO
         return (-recon + kld).mean()
 
+
+def compute_conv2D_output_size(input_size, kernel_size, stride, padding):
+        """
+        Compute output size of a 2D convolution.
+        input_size: tuple (H, W)
+        """
+        H_in, W_in = input_size
+        H_out = (H_in + 2 * padding[0] - kernel_size[0]) // stride[0] + 1
+        W_out = (W_in + 2 * padding[1] - kernel_size[1]) // stride[1] + 1
+        return (H_out, W_out)
+    
+def compute_convTranspose2D_output_size(input_size, kernel_size, stride, padding, output_padding=(0, 0)):
+    """
+    Calcula el tamaño de salida de una capa ConvTranspose2d (Deconvolución).
+    Fórmula: H_out = (H_in - 1) * stride - 2 * padding + kernel_size + output_padding
+    """
+    H_in, W_in = input_size
+    
+    H_out = (H_in - 1) * stride[0] - 2 * padding[0] + kernel_size[0] + output_padding[0]
+    W_out = (W_in - 1) * stride[1] - 2 * padding[1] + kernel_size[1] + output_padding[1]
+    
+    return (H_out, W_out)
