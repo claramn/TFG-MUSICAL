@@ -5,11 +5,13 @@ import math
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class Scheduler(nn.Module):
-    def __init__(self, num_epochs, device, beta_init=1e-4, beta_finish=0.02):
+    def __init__(self, num_epochs, beta_init=1e-4, beta_finish=0.02):
         super().__init__()
-        self.beta = torch.linspace(beta_init, beta_finish, num_epochs, device=device)
-        self.alpha = 1 - self.beta
-        self.alpha_bar = torch.cumprod(self.alpha, dim=0)
+        beta = torch.linspace(beta_init, beta_finish, num_epochs)
+        alpha = 1 - beta
+        self.register_buffer('beta', beta)
+        self.register_buffer('alpha', alpha)
+        self.register_buffer('alpha_bar', torch.cumprod(alpha, dim=0))
 
     def forward(self, t):
         return self.beta[t], self.alpha[t], self.alpha_bar[t]
@@ -153,7 +155,7 @@ class DiffusionModel(nn.Module):
             nn.Conv2d(layer_channels[1], output_channels, kernel_size=3, padding=1),
         )
         
-        self.embeder = embedder
+        self.embedder = embedder
         self.down_layers = down_layers
         self.up_layers = up_layers
         self.bottleneck = bottleneck or NoopLayer() # si no se proporciona un bottleneck, se usa una capa identidad
@@ -164,7 +166,7 @@ class DiffusionModel(nn.Module):
         # B, C, H, W = x.shape # batch, canales, altura, anchura
         
         x = self.conv_in(x) # adapta el tamaño de x a los canales de entrada de las capas
-        t_emb = self.embeder(t) # obtiene el embedding del tiempo
+        t_emb = self.embedder(t) # obtiene el embedding del tiempo
         skips = []
         
         ''' Las capas son las encargadas de decidir si aplican o no el skip o los residuales'''
