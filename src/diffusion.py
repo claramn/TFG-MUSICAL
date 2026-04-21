@@ -36,23 +36,18 @@ class Diffuser(nn.Module):
         return z, e    
     
     
-class Embeder(nn.Module):
-    def __init__(self, num_epochs, embed_dim, device):
+class Embedder(nn.Module):
+    def __init__(self, num_epochs, embed_dim):
         super().__init__()
-        position = torch.arange(num_epochs, device=device).unsqueeze(1).float()
-        div = torch.exp(torch.arange(0, embed_dim, 2, device=device).float() * -(math.log(10000.0) / embed_dim))
-        embeddings = torch.zeros(num_epochs, embed_dim, device=device)
+        position = torch.arange(num_epochs).unsqueeze(1).float()
+        div = torch.exp(torch.arange(0, embed_dim, 2).float() * -(math.log(10000.0) / embed_dim))
+        embeddings = torch.zeros(num_epochs, embed_dim)
         embeddings[:, 0::2] = torch.sin(position * div)
         embeddings[:, 1::2] = torch.cos(position * div)
-        self.embeddings = embeddings
-        self.device = device
-
+        self.register_buffer('embeddings', embeddings)
 
     def forward(self, t):
-        # t = t.long().view(-1) esto hace que t sea un tensor
-        embeds = self.embeddings[t].to(self.device)
-        # return embeds[:, :, None, None]
-        return embeds
+        return self.embeddings[t]
     
     
 class DummyLayer(nn.Module):
