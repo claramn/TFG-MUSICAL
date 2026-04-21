@@ -72,6 +72,8 @@ class DummyLayer(nn.Module):
             # nn.ReLU() ###### TODO se puede cambiar por nn.SiLU() para mayor eficiencia
             nn.SiLU()
         )
+        
+        self.last_silu = nn.SiLU()
 
         self.res_conv = nnConv(out_channels, out_channels, 3, padding=1, stride=stride)
         
@@ -95,7 +97,7 @@ class DummyLayer(nn.Module):
         out = out + t
         out = self.res_conv(out)
 
-        out = nn.SiLU()(out)
+        out = self.last_silu(out)
 
         return out, skip
 
