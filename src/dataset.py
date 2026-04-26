@@ -1,12 +1,18 @@
-
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.dataset import *
 from utils.audio_utils import *
 from torch.utils.data import Dataset
 import os
 import torch
-
-from utils.dataset import load_json, process_metadata
-from utils.audio_utils import load_raw_waveform
+from utils.dataset import (
+    load_json,
+    process_metadata,
+    load_raw_waveform,
+    build_condition,
+)
+ 
  
 """
 CAMBIOS CLAVE PARA LA ETIQUETACION
@@ -85,42 +91,6 @@ def qualities_to_sustain(qualities: list) -> float:
     return float(qualities[IDX_LONG_RELEASE])
  
  
-def build_condition(metadata: dict) -> dict:
-    """
-    A partir del dict de metadata de un sample NSynth, construye
-    todos los tensores de condición que espera ConditionalVAE.forward().
- 
-    Parámetros de metadata esperados:
-      metadata['instrument_family']  : int  0-10
-      metadata['pitch']              : int  0-127
-      metadata['velocity']           : int  0-127
-      metadata['qualities']          : list[int]  longitud 10
- 
-    Devuelve dict con tensores shape (1,) o (11,).
-    """
-    family    = metadata.get('instrument_family', 0)
-    pitch     = metadata.get('pitch',    60)
-    velocity  = metadata.get('velocity', 64)
-    qualities = metadata.get('qualities', [0] * 10)
- 
-    # Asegurar que qualities tiene longitud 10 (por si acaso)
-    if len(qualities) < 10:
-        qualities = list(qualities) + [0] * (10 - len(qualities))
- 
-    instrument_onehot = instrument_to_onehot(family)           # (11,)
-    pitch_norm        = torch.tensor([pitch / PITCH_MAX],      dtype=torch.float32)  # (1,)
-    velocity_norm     = torch.tensor([velocity / VELOCITY_MAX],dtype=torch.float32)  # (1,)
-    brightness        = torch.tensor([qualities_to_brightness(qualities)], dtype=torch.float32)  # (1,)
-    sustain           = torch.tensor([qualities_to_sustain(qualities)],    dtype=torch.float32)  # (1,)
- 
-    return {
-        'instrument_onehot': instrument_onehot,  # (11,)
-        'pitch_norm':         pitch_norm,         # (1,)
-        'velocity_norm':      velocity_norm,      # (1,)
-        'brightness':         brightness,         # (1,)
-        'sustain':            sustain,            # (1,)
-    }
- 
  
 def load_features(key: str, features_dir: str = FEATURES_DIR) -> dict:
     """
@@ -137,36 +107,28 @@ def load_features(key: str, features_dir: str = FEATURES_DIR) -> dict:
     }
  
 class NSynth(Dataset):
-    """
-    NSynth Dataset con etiquetas reales y bandeja de condición lista para el modelo.
- 
-    Args:
-        partition    : 'training' | 'validation' | 'test'
-        transform    : callable opcional sobre el waveform
-        features_dir : ruta a los .pt generados por extract_features.py
-        require_features : si True, omite samples sin .pt (útil en training)
-    """
     def __init__(self, partition: str, transform=None,
+                 target_instrument=None,
                  features_dir: str = FEATURES_DIR,
                  require_features: bool = False):
-        self._partition       = partition
-        self._transform       = transform
-        self._features_dir    = features_dir
+ 
+        self._partition        = partition
+        self._transform        = transform
+        self._features_dir     = features_dir
         self._require_features = require_features
  
-        json_data        = load_json(partition)
-        all_metadata     = process_metadata(json_data)
+        json_data    = load_json(partition)
+        all_metadata = process_metadata(json_data, target_instrument)
  
         if require_features:
-            # Filtra los samples que aún no tienen .pt extraído
             self._metadata = {
                 k: v for k, v in all_metadata.items()
                 if os.path.exists(os.path.join(features_dir, f'{k}.pt'))
             }
-            n_skipped = len(all_metadata) - len(self._metadata)
-            if n_skipped:
+            skipped = len(all_metadata) - len(self._metadata)
+            if skipped:
                 print(f'[NSynth] require_features=True: '
-                      f'se omiten {n_skipped} samples sin .pt '
+                      f'{skipped} samples sin .pt omitidos '
                       f'({len(self._metadata)} disponibles)')
         else:
             self._metadata = all_metadata
@@ -175,26 +137,8 @@ class NSynth(Dataset):
  
     def __len__(self) -> int:
         return len(self._metadata)
-
-    """
-    modificado para q funcione con los .pt q dicen ms datos sobre cada sample
-    """
+ 
     def __getitem__(self, index: int):
-        """
-        Retorna
-        -------
-        waveform  : Tensor (1, T)
-        sr        : int
-        key       : str
-        metadata  : dict   (metadata JSON original, por si lo necesitas en otro sitio)
-        features  : dict   {'f0': Tensor (T_frames,), 'loudness_db': Tensor (T_frames,)}
-        condition : dict   bandeja completa para ConditionalVAE.forward()
-            'instrument_onehot' (11,)
-            'pitch_norm'        (1,)
-            'velocity_norm'     (1,)
-            'brightness'        (1,)
-            'sustain'           (1,)
-        """
         key      = self._keys[index]
         metadata = self._metadata[key]
  
@@ -207,82 +151,59 @@ class NSynth(Dataset):
         condition = build_condition(metadata)
  
         return waveform, sr, key, metadata, features, condition
-    
-    #collate_fn para dataloader
-    """
-    necesaria pq features puede tener longitudes variables entre samples (si algunos .pt no existen y devuelven 0)
-    """
-    def nsynth_collate_fn(batch):
-        """
-        Agrupa un batch de samples de NSynth en tensores apilados.
-    
-        Asume que todos los waveforms tienen la misma longitud (NSynth: 64000 samples)
-        y que todos los .pt tienen el mismo número de frames (procesados con el mismo hop).
-        Si algún .pt es el fallback zeros(1), el batch completo lo detectará por shape.
-        """
-        waveforms  = torch.stack([b[0] for b in batch])          # (B, 1, T)
-        srs        = [b[1] for b in batch]                       # lista de ints
-        keys       = [b[2] for b in batch]                       # lista de str
-        metadatas  = [b[3] for b in batch]                       # lista de dicts
-    
-        # Features: apilar si tienen la misma longitud, o devolver lista si no
-        f0_list   = [b[4]['f0']          for b in batch]
-        ld_list   = [b[4]['loudness_db'] for b in batch]
-        if all(t.shape == f0_list[0].shape for t in f0_list):
-            features = {
-                'f0':          torch.stack(f0_list),   # (B, T_frames)
-                'loudness_db': torch.stack(ld_list),   # (B, T_frames)
-            }
-        else:
-            # Longitudes distintas: dejar como lista (raro si extract_features fue uniforme)
-            features = {'f0': f0_list, 'loudness_db': ld_list}
-    
-        # Condition: apilar cada tensor por clave
-        condition = {
-            'instrument_onehot': torch.stack([b[5]['instrument_onehot'] for b in batch]),  # (B,11)
-            'pitch_norm':         torch.stack([b[5]['pitch_norm']         for b in batch]),  # (B,1)
-            'velocity_norm':      torch.stack([b[5]['velocity_norm']      for b in batch]),  # (B,1)
-            'brightness':         torch.stack([b[5]['brightness']         for b in batch]),  # (B,1)
-            'sustain':            torch.stack([b[5]['sustain']            for b in batch]),  # (B,1)
+ 
+ 
+def nsynth_collate_fn(batch):
+    waveforms = torch.stack([b[0] for b in batch])
+    srs       = [b[1] for b in batch]
+    keys      = [b[2] for b in batch]
+    metadatas = [b[3] for b in batch]
+ 
+    f0_list = [b[4]['f0']          for b in batch]
+    ld_list = [b[4]['loudness_db'] for b in batch]
+ 
+    if all(t.shape == f0_list[0].shape for t in f0_list):
+        features = {
+            'f0':          torch.stack(f0_list),
+            'loudness_db': torch.stack(ld_list),
         }
-    
-        return waveforms, srs, keys, metadatas, features, condition
-    
-    # ── Smoke-test ─────────────────────────────────────────────────────────────────
+    else:
+        features = {'f0': f0_list, 'loudness_db': ld_list}
+ 
+    condition = {
+        'instrument_onehot': torch.stack([b[5]['instrument_onehot'] for b in batch]),
+        'pitch_norm':        torch.stack([b[5]['pitch_norm']        for b in batch]),
+        'velocity_norm':     torch.stack([b[5]['velocity_norm']     for b in batch]),
+        'brightness':        torch.stack([b[5]['brightness']        for b in batch]),
+        'sustain':           torch.stack([b[5]['sustain']           for b in batch]),
+    }
+ 
+    return waveforms, srs, keys, metadatas, features, condition
+ 
  
 if __name__ == '__main__':
     from torch.utils.data import DataLoader
  
     ds = NSynth('training', require_features=False)
-    print(f'Dataset size: {len(ds)}')
+    print(f'Dataset size: {len(ds)}\n')
  
-    sample = ds[0]
-    waveform, sr, key, metadata, features, condition = sample
+    waveform, sr, key, metadata, features, condition = ds[0]
  
-    print(f'\n── Sample 0 ──────────────────────────────')
-    print(f'key          : {key}')
-    print(f'waveform     : {waveform.shape}   sr={sr}')
-    print(f'f0           : {features["f0"].shape}   mean={features["f0"].mean():.2f} Hz')
-    print(f'loudness_db  : {features["loudness_db"].shape}   mean={features["loudness_db"].mean():.2f} dB')
-    print(f'\n── Condition ─────────────────────────────')
-    print(f'instrument_onehot : {condition["instrument_onehot"]}')
-    print(f'pitch_norm        : {condition["pitch_norm"].item():.4f}   '
-          f'(MIDI {metadata.get("pitch")})')
-    print(f'velocity_norm     : {condition["velocity_norm"].item():.4f}   '
-          f'(vel {metadata.get("velocity")})')
-    print(f'brightness        : {condition["brightness"].item():.1f}')
-    print(f'sustain           : {condition["sustain"].item():.1f}')
+    print(f'key             : {key}')
+    print(f'waveform        : {waveform.shape}   sr={sr}')
+    print(f'pitch (MIDI)    : {metadata["pitch"]}  →  pitch_norm={condition["pitch_norm"].item():.4f}')
+    print(f'velocity        : {metadata["velocity"]}  →  velocity_norm={condition["velocity_norm"].item():.4f}')
+    print(f'instrumento     : {metadata["instrument_family_str"]}')
+    print(f'qualities       : {metadata["qualities"]}')
+    print(f'brightness      : {condition["brightness"].item():.1f}')
+    print(f'sustain         : {condition["sustain"].item():.1f}')
+    print(f'f0 shape        : {features["f0"].shape}')
+    print(f'loudness shape  : {features["loudness_db"].shape}')
  
-    # Test DataLoader con collate_fn
     loader = DataLoader(ds, batch_size=4, shuffle=False, collate_fn=nsynth_collate_fn)
-    batch  = next(iter(loader))
-    wvs, srs, keys, metas, feats, conds = batch
- 
-    print(f'\n── DataLoader batch (B=4) ────────────────')
-    print(f'waveforms          : {wvs.shape}')
-    print(f'f0                 : {feats["f0"].shape}')
-    print(f'loudness_db        : {feats["loudness_db"].shape}')
-    print(f'instrument_onehot  : {conds["instrument_onehot"].shape}')
-    print(f'pitch_norm         : {conds["pitch_norm"].shape}')
+    wvs, _, _, _, feats, conds = next(iter(loader))
+    print(f'\nDataLoader batch:')
+    print(f'  waveforms          : {wvs.shape}')
+    print(f'  instrument_onehot  : {conds["instrument_onehot"].shape}')
+    print(f'  pitch_norm         : {conds["pitch_norm"].shape}')
     print('collate_fn OK ✓')
-        

@@ -20,7 +20,7 @@ import torchcrepe
 import sys
 import matplotlib.pyplot as plt
 sys.path.append('src')
-from src.dataset import NSynth
+from src.dataset_og import NSynth
 
 # ── Configuración ──────────────────────────────────────────────────────────────
 device = 'cuda' if torch.cuda.is_available() else 'cpu'

@@ -2,7 +2,7 @@ import torch
 import sys
 sys.path.append("src")
 from torch.utils.data import DataLoader
-from src.dataset import NSynth  # Asegúrate de que tu clase ya carga los .pt en el __getitem__
+from src.dataset_og import NSynth  # Asegúrate de que tu clase ya carga los .pt en el __getitem__
 
 # Creamos el dataset y un loader básico
 ds = NSynth('training')

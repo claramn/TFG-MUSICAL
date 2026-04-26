@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import FashionMNIST
 from torchvision.transforms import ToTensor
 import torchaudio.transforms as T
-from src.dataset import NSynth
+from src.dataset_og import NSynth
 
 # Assuming device is defined elsewhere, but for now, set it here
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
