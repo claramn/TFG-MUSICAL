@@ -5,9 +5,9 @@ import math
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class Scheduler(nn.Module):
-    def __init__(self, num_epochs, beta_init=1e-4, beta_finish=0.02):
+    def __init__(self, num_timesteps, beta_init=1e-4, beta_finish=0.02):
         super().__init__()
-        beta = torch.linspace(beta_init, beta_finish, num_epochs)
+        beta = torch.linspace(beta_init, beta_finish, num_timesteps)
         alpha = 1 - beta
         self.register_buffer('beta', beta)
         self.register_buffer('alpha', alpha)
@@ -39,11 +39,11 @@ class Diffuser(nn.Module):
     
     
 class Embedder(nn.Module):
-    def __init__(self, num_epochs, embed_dim):
+    def __init__(self, num_timesteps, embed_dim):
         super().__init__()
-        position = torch.arange(num_epochs).unsqueeze(1).float()
+        position = torch.arange(num_timesteps).unsqueeze(1).float()
         div = torch.exp(torch.arange(0, embed_dim, 2).float() * -(math.log(10000.0) / embed_dim))
-        embeddings = torch.zeros(num_epochs, embed_dim)
+        embeddings = torch.zeros(num_timesteps, embed_dim)
         embeddings[:, 0::2] = torch.sin(position * div)
         embeddings[:, 1::2] = torch.cos(position * div)
         self.register_buffer('embeddings', embeddings)
