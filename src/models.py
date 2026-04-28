@@ -3,6 +3,7 @@ from torch.distributions import Normal
 from src.utils.models import *
 import torch.nn.functional as F
 import torch
+from src.losses import mse_loss
 
 class Encoder(nn.Module):
     def __init__(self, input_size, latent_dim, channels, variational=False):
@@ -150,6 +151,9 @@ class AutoEncoder(nn.Module):
         reconstructed = adjust_shape(reconstructed, (target_height, target_width))
         return reconstructed
 
+    def loss_function(self, x, reconstructed):
+        return mse_loss(reconstructed, x)
+
 class VAE(nn.Module):
     def __init__(self, input_size, latent_dim, channels=None):
         super().__init__()
@@ -193,18 +197,11 @@ class VAE(nn.Module):
         x_hat = self.decoder(z)
         x_hat = adjust_shape(x_hat, (H, W), pad_mode='reflect')  # [B,C,H,W]
 
-        # Reconstruction term
-        recon = - 1/(2*sigma**2) * F.mse_loss(x_hat, x, reduction='none').view(B, -1).sum(dim=1)
+        # Compute loss
+        loss = vae_loss(x_hat, x, mean, log_var, sigma)
 
-        # KL divergence term
-        kld = self.compute_kld(mean, log_var) # (B,)
-
-        return recon, kld
+        return loss
 
     def forward(self, x):
         return self.calculate_ELBO_terms(x)
-
-    def loss_function(self, recon, kld):
-        # We return -ELBO, since we'retrying to maximize ELBO
-        return (-recon + kld).mean()
 
