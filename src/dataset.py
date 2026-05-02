@@ -1,12 +1,13 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils.dataset import *
-from utils.audio_utils import *
+
+from src.utils.dataset import *
+from src.utils.audio_utils import *
 from torch.utils.data import Dataset
 import os
 import torch
-from utils.dataset import (
+from src.utils.dataset import (
     load_json,
     process_metadata,
     load_raw_waveform,
@@ -51,8 +52,8 @@ IDX_BRIGHT       = 0
 IDX_DARK         = 1
 IDX_LONG_RELEASE = 4
  
-FEATURES_DIR = 'data/nsynth_features/train'
-
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+FEATURES_DIR = os.path.join(PROJECT_ROOT, 'data', 'nsynth_features', 'train')
 #helpers d condicion
 def instrument_to_onehot(family_int: int) -> torch.Tensor:
     """int 0-10  →  FloatTensor (11,)"""
