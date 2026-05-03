@@ -35,7 +35,27 @@ class Diffuser(nn.Module):
     
         alpha_bar_t = alpha_bar_t.view(-1, 1, 1, 1)
         z = torch.sqrt(alpha_bar_t) * x + torch.sqrt(1 - alpha_bar_t) * e
-        return z, e    
+        return z, e  
+    
+class Diffuser1D(nn.Module):
+    def __init__(self, model, scheduler):
+        super().__init__()
+        self.model = model
+        self.scheduler = scheduler
+
+    # x: input image, t: time step
+    def forward(self, x, t):
+        # e = torch.randn(1, 1, 32, 32) # ruido gaussiano
+        e = torch.randn_like(x)  # ruido gaussiano mismo tamaño que x
+        beta_t, alpha_t, alpha_bar_t = self.scheduler(t)
+        # para que vaya con tensores
+        # beta_t = beta_t.view(-1, 1, 1, 1)
+        # alpha_t = alpha_t.view(-1, 1, 1, 1)
+        # z = torch.sqrt(alpha_t) * x + torch.sqrt(beta_t) * e
+    
+        alpha_bar_t = alpha_bar_t.view(-1, 1, 1)
+        z = torch.sqrt(alpha_bar_t) * x + torch.sqrt(1 - alpha_bar_t) * e
+        return z, e      
     
     
 class Embedder(nn.Module):
@@ -93,7 +113,53 @@ class DummyLayer(nn.Module):
         t = t[:, :, None, None]
         out = out + t
         out = self.res_conv(out)
+        # out = out + self.channel_proj(x)  # ← residual connection, was missing
+        out = self.last_silu(out)
 
+        return out, skip
+    
+class Layer1D(nn.Module):
+    def __init__(self, in_channels, out_channels, norm_groups, time_dim, kernel_size=3, skip=False, stride=1):
+        super().__init__()
+        
+        if stride < 0:
+            stride = -stride
+            nnConv = nn.ConvTranspose1d
+        else:
+            nnConv = nn.Conv1d
+                    
+        self.conv = nn.Sequential(
+            nnConv(in_channels, out_channels, kernel_size, padding=(kernel_size-1)//2, stride=stride),
+            nn.BatchNorm1d(out_channels), ## EN PRINCIPIO ES MEJOR QUE GROUPNORM
+            # nn.GroupNorm(norm_groups, out_channels), ###### TODO se puede cambiar por nn.BatchNorm2d(out_channels) para mayor eficiencia
+            # nn.ReLU() ###### TODO se puede cambiar por nn.SiLU() para mayor eficiencia
+            nn.SiLU()
+        )
+        
+        self.last_silu = nn.SiLU()
+
+        self.res_conv = nnConv(out_channels, out_channels, 3, padding=1, stride=stride)
+        
+        self.time_proj = nn.Linear(time_dim, out_channels)
+        self.channel_proj = nnConv(in_channels, out_channels, 1)
+        
+        self.skip_conv = None
+        if skip:
+            self.skip_conv = nnConv(in_channels, in_channels, kernel_size=1, stride=1)  # Adapta los canales del skip a los canales de salida de la capa
+    
+    def forward(self, x, t_emb):
+        
+        skip = None
+        if self.skip_conv is not None:
+            # sin adaprtar el skip, lo sumamos directamente
+            skip = self.skip_conv(x)
+        
+        out = self.conv(x)
+        t = self.time_proj(t_emb)
+        t = t[:, :, None]
+        out = out + t
+        out = self.res_conv(out)
+        # out = out + self.channel_proj(x)  # ← residual connection, was missing
         out = self.last_silu(out)
 
         return out, skip
@@ -114,7 +180,8 @@ class DiffusionModel(nn.Module):
             bottleneck:nn.Module=None, 
             up_layers:list[nn.Module]=None, 
             input_channels=1, 
-            output_channels=1
+            output_channels=1,
+            dims=2
         ):
         '''
             - input_channels: canales de entrada 
@@ -137,12 +204,15 @@ class DiffusionModel(nn.Module):
         self.relu = nn.ReLU()
         self.channels = layer_channels
         
+        nnConvxd = nn.Conv1d if dims == 1 else nn.Conv2d
+
+        
         # aparentemente esto va de hacer redes convolucionales
         # self.conv_in = nn.Conv2d(input_channels, channels[0], kernel_size=3, padding=1),
 
         
         self.conv_in = nn.Sequential(
-            nn.Conv2d(input_channels, layer_channels[0], kernel_size=3, padding=1),
+            nnConvxd(input_channels, layer_channels[0], kernel_size=3, padding=1),
             nn.GroupNorm(norm_groups, layer_channels[0]),
             nn.ReLU()
         )
@@ -152,7 +222,7 @@ class DiffusionModel(nn.Module):
         self.conv_out = nn.Sequential(
             nn.GroupNorm(norm_groups, layer_channels[1]),
             nn.ReLU(),
-            nn.Conv2d(layer_channels[1], output_channels, kernel_size=3, padding=1),
+            nnConvxd(layer_channels[1], output_channels, kernel_size=3, padding=1),
         )
         
         self.embedder = embedder
