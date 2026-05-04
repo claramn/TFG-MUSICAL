@@ -37,7 +37,7 @@ class Diffuser(nn.Module):
         z = torch.sqrt(alpha_bar_t) * x + torch.sqrt(1 - alpha_bar_t) * e
         return z, e  
     
-class Diffuser1D(nn.Module):
+class LatentDiffuser(nn.Module):
     def __init__(self, model, scheduler):
         super().__init__()
         self.model = model
@@ -53,7 +53,7 @@ class Diffuser1D(nn.Module):
         # alpha_t = alpha_t.view(-1, 1, 1, 1)
         # z = torch.sqrt(alpha_t) * x + torch.sqrt(beta_t) * e
     
-        alpha_bar_t = alpha_bar_t.view(-1, 1, 1)
+        alpha_bar_t = alpha_bar_t.view(-1, 1)
         z = torch.sqrt(alpha_bar_t) * x + torch.sqrt(1 - alpha_bar_t) * e
         return z, e      
     
@@ -171,6 +171,10 @@ class NoopLayer(nn.Module):
     def forward(self, x, t_emb):
         return x, x
 
+class NoopLatentLayer(NoopLayer):
+    def forward(self, x, t_emb):
+        return x, x
+
 class DiffusionModel(nn.Module):
     def __init__(self, 
             layer_channels:tuple[int, int], # canales de entrada y salida de las capas de downsampling y upsampling
@@ -181,7 +185,6 @@ class DiffusionModel(nn.Module):
             up_layers:list[nn.Module]=None, 
             input_channels=1, 
             output_channels=1,
-            dims=2
         ):
         '''
             - input_channels: canales de entrada 
@@ -204,7 +207,7 @@ class DiffusionModel(nn.Module):
         self.relu = nn.ReLU()
         self.channels = layer_channels
         
-        nnConvxd = nn.Conv1d if dims == 1 else nn.Conv2d
+        # nnConvxd = nn.Conv1d if dims == 1 else nn.Conv2d
 
         
         # aparentemente esto va de hacer redes convolucionales
@@ -212,7 +215,7 @@ class DiffusionModel(nn.Module):
 
         
         self.conv_in = nn.Sequential(
-            nnConvxd(input_channels, layer_channels[0], kernel_size=3, padding=1),
+            nn.Conv2d(input_channels, layer_channels[0], kernel_size=3, padding=1),
             nn.GroupNorm(norm_groups, layer_channels[0]),
             nn.ReLU()
         )
@@ -222,7 +225,7 @@ class DiffusionModel(nn.Module):
         self.conv_out = nn.Sequential(
             nn.GroupNorm(norm_groups, layer_channels[1]),
             nn.ReLU(),
-            nnConvxd(layer_channels[1], output_channels, kernel_size=3, padding=1),
+            nn.Conv2d(layer_channels[1], output_channels, kernel_size=3, padding=1),
         )
         
         self.embedder = embedder
@@ -281,3 +284,73 @@ class DiffusionModel(nn.Module):
         if x.shape[2:] != og_size:
             x = nn.functional.interpolate(x, size=og_size, mode="bilinear", align_corners=False)
         return x
+    
+class LatentDiffusionMLP(nn.Module):
+    def __init__(self,
+            latent_dim: int,          # equivalente a input_channels/output_channels
+            hidden_dims: list,          # equivalente a layer_channels
+            blocks: nn.ModuleList,
+            norms: nn.ModuleList,
+            embedder: nn.Module,      # igual que DiffusionModel
+            bottleneck: nn.Module = None,  # igual que DiffusionModel
+        ):
+        '''
+            - latent_dim: tamaño del vector latente del VAE (200)
+            - hidden_dim: tamaño del espacio interno de la red (512)
+            - embedder: objeto que hace el embedding del tiempo (igual que DiffusionModel)
+            - depth: número de bloques residuales
+            - bottleneck: capa opcional en el centro de la red
+        '''
+        super().__init__()
+
+        # Proyecta latente al espacio interno
+        self.proj_in = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dims[0]),
+            nn.LayerNorm(hidden_dims[0]),
+            nn.ReLU()
+        )
+
+        # Proyecta espacio interno de vuelta al latente
+        self.proj_out = nn.Sequential(
+            nn.LayerNorm(hidden_dims[-1]),
+            nn.ReLU(),
+            nn.Linear(hidden_dims[-1], latent_dim)
+        )
+
+        # Bloques residuales con condicionamiento temporal
+        self.blocks = blocks
+        self.norms = norms
+        
+
+        # Proyección del embedding temporal a hidden_dim
+        self.time_proj = nn.Sequential(
+            nn.Linear(embedder.embeddings.shape[1], hidden_dims[-1]),
+            nn.SiLU(),
+            nn.Linear(hidden_dims[-1], hidden_dims[-1]),
+        )
+
+        self.embedder = embedder
+        self.bottleneck = bottleneck or NoopLatentLayer()
+
+    def forward(self, x, t):
+            x = self.proj_in(x)            # [B, hidden_dims[0]]
+            t_emb = self.embedder(t)
+            t_emb = self.time_proj(t_emb)  # [B, hidden_dims[-1]]
+
+            # Down
+            skips = []
+            for block, norm in zip(self.down_blocks, self.down_norms):
+                skips.append(x)            # guarda skip antes de cambiar tamaño
+                x = block(norm(x))         # [B, hidden_dims[i]] → [B, hidden_dims[i+1]]
+
+            x = x + t_emb                 # condicionamiento temporal en el centro
+            x, _ = self.bottleneck(x, t_emb)
+
+            # Up
+            for block, norm in zip(self.up_blocks, self.up_norms):
+                skip = skips.pop()
+                x = torch.cat([x, skip], dim=-1)   # concat por última dim, equiv. dim=1 en conv
+                x = block(norm(x))         # [B, hidden_dims[i]*2] → [B, hidden_dims[i-1]]
+
+            x = self.proj_out(x)           # [B, latent_dim]
+            return x
