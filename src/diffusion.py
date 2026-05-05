@@ -113,53 +113,8 @@ class DummyLayer(nn.Module):
         t = t[:, :, None, None]
         out = out + t
         out = self.res_conv(out)
-        # out = out + self.channel_proj(x)  # ← residual connection, was missing
-        out = self.last_silu(out)
-
-        return out, skip
-    
-class Layer1D(nn.Module):
-    def __init__(self, in_channels, out_channels, norm_groups, time_dim, kernel_size=3, skip=False, stride=1):
-        super().__init__()
-        
-        if stride < 0:
-            stride = -stride
-            nnConv = nn.ConvTranspose1d
-        else:
-            nnConv = nn.Conv1d
-                    
-        self.conv = nn.Sequential(
-            nnConv(in_channels, out_channels, kernel_size, padding=(kernel_size-1)//2, stride=stride),
-            nn.BatchNorm1d(out_channels), ## EN PRINCIPIO ES MEJOR QUE GROUPNORM
-            # nn.GroupNorm(norm_groups, out_channels), ###### TODO se puede cambiar por nn.BatchNorm2d(out_channels) para mayor eficiencia
-            # nn.ReLU() ###### TODO se puede cambiar por nn.SiLU() para mayor eficiencia
-            nn.SiLU()
-        )
-        
-        self.last_silu = nn.SiLU()
-
-        self.res_conv = nnConv(out_channels, out_channels, 3, padding=1, stride=stride)
-        
-        self.time_proj = nn.Linear(time_dim, out_channels)
-        self.channel_proj = nnConv(in_channels, out_channels, 1)
-        
-        self.skip_conv = None
-        if skip:
-            self.skip_conv = nnConv(in_channels, in_channels, kernel_size=1, stride=1)  # Adapta los canales del skip a los canales de salida de la capa
-    
-    def forward(self, x, t_emb):
-        
-        skip = None
-        if self.skip_conv is not None:
-            # sin adaprtar el skip, lo sumamos directamente
-            skip = self.skip_conv(x)
-        
-        out = self.conv(x)
-        t = self.time_proj(t_emb)
-        t = t[:, :, None]
-        out = out + t
-        out = self.res_conv(out)
-        # out = out + self.channel_proj(x)  # ← residual connection, was missing
+        # TODO esto no se si dará error
+        out = out + self.channel_proj(x)  # ← residual connection, was missing
         out = self.last_silu(out)
 
         return out, skip
@@ -289,8 +244,10 @@ class LatentDiffusionMLP(nn.Module):
     def __init__(self,
             latent_dim: int,          # equivalente a input_channels/output_channels
             hidden_dims: list,          # equivalente a layer_channels
-            blocks: nn.ModuleList,
-            norms: nn.ModuleList,
+            blocks_up: nn.ModuleList,
+            blocks_down: nn.ModuleList,
+            norms_up: nn.ModuleList,
+            norms_down: nn.ModuleList,
             embedder: nn.Module,      # igual que DiffusionModel
             bottleneck: nn.Module = None,  # igual que DiffusionModel
         ):
@@ -312,14 +269,16 @@ class LatentDiffusionMLP(nn.Module):
 
         # Proyecta espacio interno de vuelta al latente
         self.proj_out = nn.Sequential(
-            nn.LayerNorm(hidden_dims[-1]),
+            nn.LayerNorm(hidden_dims[0]),
             nn.ReLU(),
-            nn.Linear(hidden_dims[-1], latent_dim)
+            nn.Linear(hidden_dims[0], latent_dim)
         )
 
         # Bloques residuales con condicionamiento temporal
-        self.blocks = blocks
-        self.norms = norms
+        self.blocks_up = blocks_up
+        self.blocks_down = blocks_down
+        self.norms_up = norms_up
+        self.norms_down = norms_down
         
 
         # Proyección del embedding temporal a hidden_dim
@@ -333,24 +292,25 @@ class LatentDiffusionMLP(nn.Module):
         self.bottleneck = bottleneck or NoopLatentLayer()
 
     def forward(self, x, t):
-            x = self.proj_in(x)            # [B, hidden_dims[0]]
-            t_emb = self.embedder(t)
-            t_emb = self.time_proj(t_emb)  # [B, hidden_dims[-1]]
+        t_emb = self.time_proj(self.embedder(t))  # [B, hidden_dims[-1]]
 
-            # Down
-            skips = []
-            for block, norm in zip(self.down_blocks, self.down_norms):
-                skips.append(x)            # guarda skip antes de cambiar tamaño
-                x = block(norm(x))         # [B, hidden_dims[i]] → [B, hidden_dims[i+1]]
+        x = self.proj_in(x)   # [B, latent_dim] → [B, hidden_dims[0]]
 
-            x = x + t_emb                 # condicionamiento temporal en el centro
-            x, _ = self.bottleneck(x, t_emb)
+        # Down
+        skips = []
+        for block, norm in zip(self.blocks_down, self.norms_down):
+            skips.append(x)
+            x = block(norm(x))
 
-            # Up
-            for block, norm in zip(self.up_blocks, self.up_norms):
-                skip = skips.pop()
-                x = torch.cat([x, skip], dim=-1)   # concat por última dim, equiv. dim=1 en conv
-                x = block(norm(x))         # [B, hidden_dims[i]*2] → [B, hidden_dims[i-1]]
+        x = x + t_emb         # [B, hidden_dims[-1]]
 
-            x = self.proj_out(x)           # [B, latent_dim]
-            return x
+        x, _ = self.bottleneck(x, t_emb)
+
+        # Up
+        for block, norm in zip(self.blocks_up, self.norms_up):
+            skip = skips.pop()
+            x = torch.cat([x, skip], dim=-1)
+            x = block(norm(x))
+
+        x = self.proj_out(x)  # [B, hidden_dims[0]] → [B, latent_dim]
+        return x
