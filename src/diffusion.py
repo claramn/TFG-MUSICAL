@@ -119,6 +119,22 @@ class DummyLayer(nn.Module):
 
         return out, skip
 
+class BottleneckLatent(nn.Module):
+    def __init__(self, hidden_dim: int, time_dim: int):
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
+        self.norm = nn.LayerNorm(hidden_dim)
+        self.time_proj = nn.Linear(time_dim, hidden_dim)
+
+    def forward(self, x, t_emb):
+        t = self.time_proj(t_emb)
+        x = x + self.block(self.norm(x)) + t  # residual + condicionamiento temporal
+        return x, x  # devuelve (output, skip) igual que NoopLatentLayer
+
 class NoopLayer(nn.Module):
     def __init__(self):
         super().__init__()
