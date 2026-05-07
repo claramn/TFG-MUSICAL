@@ -156,6 +156,7 @@ class DiffusionModel(nn.Module):
             up_layers:list[nn.Module]=None, 
             input_channels=1, 
             output_channels=1,
+            config: dict = None
         ):
         '''
             - input_channels: canales de entrada 
@@ -175,6 +176,9 @@ class DiffusionModel(nn.Module):
         '''
         
         super().__init__()
+        
+        self.config = config or {}
+        
         self.relu = nn.ReLU()
         self.channels = layer_channels
         
@@ -256,6 +260,9 @@ class DiffusionModel(nn.Module):
             x = nn.functional.interpolate(x, size=og_size, mode="bilinear", align_corners=False)
         return x
     
+    def get_config(self):
+        return self.config
+    
 class LatentDiffusionMLP(nn.Module):
     def __init__(self,
             latent_dim: int,          # equivalente a input_channels/output_channels
@@ -266,6 +273,7 @@ class LatentDiffusionMLP(nn.Module):
             norms_down: nn.ModuleList,
             embedder: nn.Module,      # igual que DiffusionModel
             bottleneck: nn.Module = None,  # igual que DiffusionModel
+            config: dict = None
         ):
         '''
             - latent_dim: tamaño del vector latente del VAE (200)
@@ -275,6 +283,8 @@ class LatentDiffusionMLP(nn.Module):
             - bottleneck: capa opcional en el centro de la red
         '''
         super().__init__()
+        
+        self.config = config or {}
 
         # Proyecta latente al espacio interno
         self.proj_in = nn.Sequential(
@@ -330,3 +340,6 @@ class LatentDiffusionMLP(nn.Module):
 
         x = self.proj_out(x)  # [B, hidden_dims[0]] → [B, latent_dim]
         return x
+    
+    def get_config(self):
+        return self.config
