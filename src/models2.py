@@ -265,7 +265,8 @@ class DecoderDDSP(nn.Module):
         h = self.trunk(zc)                                      # (B, hidden)
 
         f0_scale       = torch.sigmoid(self.head_f0(h))        # (B, n_frames)   > 0
-        loudness_scale = self.head_loudness(h)                  # (B, n_frames)   aditivo dB
+        # mantener loudness scale en rango
+        loudness_scale = torch.sigmoid(self.head_loudness(h))  # forzar [0,1]              # (B, n_frames)   aditivo dB
         harmonics_flat = self.head_harm(h)                      # (B, n_frames*H)
         harmonics      = F.softmax(
             harmonics_flat.view(-1, self.n_frames, self.n_harmonics),

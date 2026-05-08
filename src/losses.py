@@ -48,7 +48,10 @@ class MultiDecoderLoss(nn.Module):
         # FIX 1: Normalización robusta
         # F0: Convertimos Hz a una escala logarítmica (parecido a MIDI) y normalizamos de 0 a 1.
         # F_MIN = 32.7 Hz. Un rango de 6 octavas cubre hasta ~2000 Hz.
-        f0_real_norm = (torch.log2(f0_real / 32.7) / 6.0).clamp(0.0, 1.0)
+        
+        #f0_real_norm = (torch.log2(f0_real / 32.7) / 6.0).clamp(0.0, 1.0)
+        f0_safe = f0_real.clamp(min=1.0)  # evita log(0)
+        f0_real_norm = (torch.log2(f0_safe / 32.7) / 6.0).clamp(0.0, 1.0)
         
         # Loudness: Asumimos un ruido de fondo (silencio absoluto) de -120 dB.
         # Rango [-120, 0] mapeado a [0, 1].
