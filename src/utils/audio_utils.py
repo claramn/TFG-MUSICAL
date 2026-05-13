@@ -112,7 +112,7 @@ def spectrogram_to_waveform(spectrogram, n_fft=1500, hop_length=250, win_length=
         complex_stft = mag_np * np.exp(1j * phase_np)
         waveform = librosa.istft(complex_stft, hop_length=hop_length,
                                  win_length=win_length, center=False)  # (T,)
-        return waveform[np.newaxis, :]  # (1, T) para consistencia
+        return waveform[:,]  # (T,1) para consistencia
     else:
         istft_transform = torchaudio.transforms.InverseSpectrogram(
             n_fft=n_fft, win_length=win_length, hop_length=hop_length,
