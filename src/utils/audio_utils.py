@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
-from IPython.display import Audio
+from IPython.display import Audio, display
 import plotly.express as px
 import pandas as pd
 import plotly.io as pio
@@ -73,7 +73,7 @@ def listen(waveform, sample_rate=16000):
         waveform = waveform.squeeze().cpu().numpy()
     else:
         waveform = waveform.squeeze()
-    return Audio(waveform, rate=sample_rate)
+    display(Audio(waveform, rate=sample_rate))  
 
 def waveform_to_spectrogram(waveform, n_fft=1500, hop_length=250, win_length=1500, uselibrosa=False):
     """
