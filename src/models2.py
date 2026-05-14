@@ -119,7 +119,7 @@ hemos quitado variational=false y batchnorm pq en las vae el batch normalization
 class Encoder(nn.Module):
     """
     Conv2D stack: (B,1,H,W) → μ (B, latent_dim), logvar (B, latent_dim)
-    Idéntico al encoder de tu VAE original, sin BatchNorm (perjudica VAE).
+    Idéntico al encoder de VAE original, sin BatchNorm (perjudica VAE).
     """
 
     def __init__(self, input_size, latent_dim, channels):
@@ -170,7 +170,7 @@ class DecoderMel(nn.Module):
     """
     (B, latent_dim + condition_dim) → (B, 1, H, W)  Mel-spectrogram reconstruido.
 
-    La única diferencia respecto a tu Decoder original es que fc acepta
+    La única diferencia respecto al Decoder original es que fc acepta
     latent_dim + condition_dim en vez de solo latent_dim.
     """
 
@@ -330,7 +330,7 @@ class ConditionalVAE(nn.Module):
         self.latent_dim    = latent_dim
         self.condition_dim = condition_dim
 
-        # ── Módulos ──────────────────────────────────────────────────────────
+        #  Módulos 
         self.condition_embedder = ConditionEmbedder(condition_dim)
 
         self.encoder    = Encoder(input_size, latent_dim, channels)
@@ -344,19 +344,19 @@ class ConditionalVAE(nn.Module):
         self._prior_loc   = None
         self._prior_scale = None
 
-    # ── Reparameterización ────────────────────────────────────────────────────
+    #  Reparameterización 
     def reparameterize(self, mu, logvar):
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return mu + eps * std
 
-    # ── KL divergence ─────────────────────────────────────────────────────────
+    # KL divergence 
     @staticmethod
     def kld(mu, logvar):
         """KL( q(z|x) || N(0,I) ), sumada por dimensión latente."""
         return -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=-1)  # (B,)
 
-    # ── Forward ───────────────────────────────────────────────────────────────
+    #  Forward 
     def forward(self, mel,
                 instrument_onehot, pitch_norm, velocity_norm,
                 brightness, sustain):
@@ -401,7 +401,7 @@ class ConditionalVAE(nn.Module):
 
         return mel_hat, ddsp_params, kl
 
-    # ── Sampling (inferencia / demo) ──────────────────────────────────────────
+    #  Sampling (inferencia / demo) 
     @torch.no_grad()
     def sample(self, instrument_onehot, pitch_norm, velocity_norm,
                brightness, sustain, n_samples=1):
@@ -423,7 +423,7 @@ class ConditionalVAE(nn.Module):
         ddsp_out = self.decoder_ddsp(zc)
         return mel_hat, ddsp_out
 
-    # ── Interpolación latente (análisis) ─────────────────────────────────────
+    #  Interpolación latente (análisis) 
     @torch.no_grad()
     def interpolate(self, mel_a, mel_b, cond_a, cond_b, steps=8):
         """
