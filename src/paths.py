@@ -1,0 +1,55 @@
+_root = r"C:\Users\Articuno\Desktop\TFG-info\data"
+
+# TODO usar los paths estos
+PATHS = {
+    'autoencoder' : {
+        'model' : _root + r"\models\autoencoder_fase.pth"
+    },
+    'autoencoder_2D' : {
+        'model' : _root + r"\models\autoencoder_2D.pth"
+    },
+    'VAE' : {
+        'model' : _root + r"\models\vae.pth"
+    },
+    'VAE_2D' : {
+        'model' : _root + r"\models\vae_2D.pth"
+    },
+    'minst_VAE' : {
+        'model' : _root + r"\models\minst.pth"
+    },
+    'minst_diffusion' : {
+        'model': _root + r"\minst_diffusion\model.pth",
+        'config': _root + r"\minst_diffusion\config.json",
+        'scheduler': _root + r"\minst_diffusion\scheduler.pth",
+        'checkpoint' : _root + r"\minst_diffusion\checkpoint.pth",
+
+    },
+    'diffusion' : {
+        'model': _root + r"\diffusion\model.pth",
+        'config': _root + r"\diffusion\config.json",
+        'scheduler': _root + r"\diffusion\scheduler.pth",
+        'checkpoint': _root + r"\diffusion\checkpoint.pth"
+    },
+    'vae_diffusion' : {
+        'model': _root + r"\vae_diffusion\model.pth",
+        'config': _root + r"\vae_diffusion\config.json",
+        'scheduler': _root + r"\vae_diffusion\scheduler.pth",
+        'dataset_training' : _root + r"\vae_diffusion\dataset\training.pt",
+        'dataset_validation' : _root + r"\vae_diffusion\dataset\validation.pt",
+        'training_norm_params' :  _root + r"\vae_diffusion\dataset\training_params.pt",
+        'validation_norm_params' :  _root + r"\vae_diffusion\dataset\validation_params.pt",
+        'checkpoint': _root + r"\vae_diffusion\checkpoint.pth",
+    },
+    'autoencoder_diffusion' : {
+        'model': _root + r"\autoencoder_diffusion\model.pth",
+        'config': _root + r"\autoencoder_diffusion\config.json",
+        'scheduler': _root + r"\autoencoder_diffusion\scheduler.pth",
+        'dataset_training' : _root + r"\autoencoder_diffusion\dataset\training.pt",
+        'dataset_validation' : _root + r"\autoencoder_diffusion\dataset\validation.pt",
+        'training_norm_params' :  _root + r"\autoencoder_diffusion\dataset\training_params.pt",
+        'validation_norm_params' :  _root + r"\autoencoder_diffusion\dataset\validation_params.pt",
+        'checkpoint': _root + r"\autoencoder_diffusion\checkpoint.pth",
+
+    },
+    
+}
