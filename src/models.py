@@ -3,7 +3,7 @@ from torch.distributions import Normal
 from src.utils.models import *
 import torch.nn.functional as F
 import torch
-from src.losses import mse_loss
+from src.losses import mse_loss, vae_loss
 
 class Encoder(nn.Module):
     def __init__(self, input_size, latent_dim, channels, variational=False):

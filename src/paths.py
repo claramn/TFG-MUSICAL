@@ -1,4 +1,4 @@
-_root = r"C:\Users\Articuno\Desktop\TFG-info\data"
+_root = r"C:\Users\Articuno\Desktop\TFG-MUSICAL\data"
 
 # TODO usar los paths estos
 PATHS = {
@@ -49,7 +49,7 @@ PATHS = {
         'training_norm_params' :  _root + r"\autoencoder_diffusion\dataset\training_params.pt",
         'validation_norm_params' :  _root + r"\autoencoder_diffusion\dataset\validation_params.pt",
         'checkpoint': _root + r"\autoencoder_diffusion\checkpoint.pth",
-
     },
+    'augmented_data_1' : _root + r"\augmented_1"
     
 }
