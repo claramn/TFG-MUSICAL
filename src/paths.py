@@ -6,13 +6,13 @@ PATHS = {
         'model' : _root + r"\models\autoencoder_fase.pth"
     },
     'autoencoder_2D' : {
-        'model' : _root + r"\models\autoencoder_2D.pth"
+        'model' : _root + r"\models\latent_autoencoder.pth"
     },
     'VAE' : {
         'model' : _root + r"\models\vae.pth"
     },
     'VAE_2D' : {
-        'model' : _root + r"\models\vae_2D.pth"
+        'model' : _root + r"\models\latent_VAE.pth"
     },
     'minst_VAE' : {
         'model' : _root + r"\models\minst.pth"
