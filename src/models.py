@@ -202,6 +202,18 @@ class VAE(nn.Module):
 
         return loss
 
+    # def forward(self, x):
+        # return self.calculate_ELBO_terms(x)
     def forward(self, x):
-        return self.calculate_ELBO_terms(x)
+        B, C, H, W = x.shape
+
+        _, mu, log_var = self.encoder(x)
+        log_var = torch.clamp(log_var, -20, 20)
+
+        z = self.reparameterization(mu, log_var)
+
+        x_hat = self.decoder(z)
+        x_hat = adjust_shape(x_hat, (H, W), pad_mode="reflect")
+
+        return x_hat, mu, log_var
 

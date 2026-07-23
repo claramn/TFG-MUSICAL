@@ -118,6 +118,81 @@ class DummyLayer(nn.Module):
         out = self.last_silu(out)
 
         return out, skip
+    
+class DownLayer(nn.Module):
+    def __init__(self, in_channels, out_channels, norm_groups, time_dim, kernel_size=3, skip=False, stride=1):
+        super().__init__()
+
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size, padding=(kernel_size-1)//2, stride=stride),
+            nn.BatchNorm2d(out_channels),
+            nn.SiLU()
+        )
+
+        self.last_silu = nn.SiLU()
+        self.res_conv = nn.ConvTranspose2d(out_channels, out_channels, 4, padding=1, stride=stride)
+        self.time_proj = nn.Linear(time_dim, out_channels)
+        self.channel_proj = nn.Conv2d(in_channels, out_channels, 1)
+
+        self.skip_conv = None
+        if skip:
+            self.skip_conv = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1)
+
+    def forward(self, x, t_emb):
+
+        skip = None
+        if self.skip_conv is not None:
+            # sin adaptar el skip, lo sumamos directamente
+            skip = self.skip_conv(x)
+
+        out = self.conv(x)
+        t = self.time_proj(t_emb)
+        t = t[:, :, None, None]
+        out = out + t
+        out = self.res_conv(out)
+        # TODO esto no se si dará error
+        out = out + self.channel_proj(x)  # ← residual connection, was missing
+        out = self.last_silu(out)
+
+        return out, skip
+
+
+class UpLayer(nn.Module):
+    def __init__(self, in_channels, out_channels, norm_groups, time_dim, kernel_size=3, skip=False, stride=1):
+        super().__init__()
+
+        self.conv = nn.Sequential(
+            nn.ConvTranspose2d(in_channels, out_channels, kernel_size, padding=(kernel_size-1)//2, stride=stride),
+            nn.BatchNorm2d(out_channels),
+            nn.SiLU()
+        )
+
+        self.last_silu = nn.SiLU()
+        self.res_conv = nn.Conv2d(out_channels, out_channels, 4, padding=1, stride=stride)
+        self.time_proj = nn.Linear(time_dim, out_channels)
+        self.channel_proj = nn.ConvTranspose2d(in_channels, out_channels, 1)
+
+        self.skip_conv = None
+        if skip:
+            self.skip_conv = nn.ConvTranspose2d(in_channels, in_channels, kernel_size=1, stride=1)
+
+    def forward(self, x, t_emb):
+
+        skip = None
+        if self.skip_conv is not None:
+            # sin adaptar el skip, lo sumamos directamente
+            skip = self.skip_conv(x)
+
+        out = self.conv(x)
+        t = self.time_proj(t_emb)
+        t = t[:, :, None, None]
+        out = out + t
+        out = self.res_conv(out)
+        # TODO esto no se si dará error
+        out = out + self.channel_proj(x)  # ← residual connection, was missing
+        out = self.last_silu(out)
+
+        return out, skip
 
 class BottleneckLatent(nn.Module):
     def __init__(self, hidden_dim: int, time_dim: int):
