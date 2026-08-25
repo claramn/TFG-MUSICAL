@@ -87,7 +87,7 @@ class ConditionEmbedder(nn.Module):
             nn.Linear(self.INPUT_DIM, 64),
             nn.ReLU(),
             nn.Linear(64, condition_dim),
-            nn.ReLU(),
+            #nn.ReLU(),
         )
 
     def forward(self, instrument_onehot, pitch_norm, velocity_norm,
