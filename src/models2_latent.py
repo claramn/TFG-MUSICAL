@@ -480,6 +480,36 @@ class ConditionalVAE(nn.Module):
         return mel_hat, ddsp_params, kl
 
     #  Sampling (inferencia / demo) 
+    @staticmethod
+    def _prep_condition_tensor(t, n_samples, device):
+        """
+        Normaliza un tensor de condicion para sample():
+          - lo manda al device del modelo
+          - le asegura una dimension de batch
+          - si viene con batch=1 (una sola condicion) y se piden varias
+            muestras, la REPITE n_samples veces (torch.repeat, copia real
+            de memoria — no expand, para que .view() no falle luego)
+          - si el batch no es 1 ni coincide con n_samples, avisa claro
+            en vez de dejar que torch.cat falle con un error críptico
+        """
+        t = torch.as_tensor(t, dtype=torch.float32, device=device)
+        if t.dim() == 0:
+            t = t.view(1, 1)
+        elif t.dim() == 1:
+            t = t.unsqueeze(0)          # (D,) -> (1, D): asumimos 1 sola condicion
+
+        batch = t.shape[0]
+        if batch == n_samples:
+            return t
+        if batch == 1:
+            reps = [n_samples] + [1] * (t.dim() - 1)
+            return t.repeat(*reps)      # (1, ...) -> (n_samples, ...)
+        raise ValueError(
+            f'El batch de esta condicion es {batch}, pero n_samples={n_samples}. '
+            f'Pasa una condicion por muestra (batch == n_samples) o una sola '
+            f'condicion (batch == 1) para repetirla automaticamente.'
+        )
+
     @torch.no_grad()
     def sample(self, instrument_onehot, pitch_norm, velocity_norm,
                brightness, sustain, n_samples=1):
@@ -487,11 +517,25 @@ class ConditionalVAE(nn.Module):
         Genera audio desde el prior N(0,I) sin pasar audio de entrada.
         Útil para el demo web: das etiquetas y obtienes síntesis.
 
+        Acepta tanto:
+          - una condicion por muestra (batch de cada tensor == n_samples), o
+          - una unica condicion compartida (batch == 1), que se repite
+            automaticamente n_samples veces — asi puedes pedir "dame 5
+            variaciones de este instrumento/pitch" sin repetir tu mismo
+            los tensores antes de llamar.
+
         Retorna mel_hat y ddsp_params.
         """
+        device = next(self.parameters()).device
         H_lat, W_lat = self.latent_hw
-        z = torch.randn(n_samples, self.latent_dim, H_lat, W_lat,
-                        device=next(self.parameters()).device)
+
+        instrument_onehot = self._prep_condition_tensor(instrument_onehot, n_samples, device)
+        pitch_norm        = self._prep_condition_tensor(pitch_norm, n_samples, device)
+        velocity_norm      = self._prep_condition_tensor(velocity_norm, n_samples, device)
+        brightness         = self._prep_condition_tensor(brightness, n_samples, device)
+        sustain            = self._prep_condition_tensor(sustain, n_samples, device)
+
+        z = torch.randn(n_samples, self.latent_dim, H_lat, W_lat, device=device)
         c_map = self._condition_map(instrument_onehot, pitch_norm, velocity_norm,
                                     brightness, sustain, hw=(H_lat, W_lat))
         zc       = torch.cat([z, c_map], dim=1)

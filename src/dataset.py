@@ -117,7 +117,12 @@ class NSynth(Dataset):
         self._transform        = transform
         self._features_dir     = features_dir
         self._require_features = require_features
- 
+        self._mel_dir = os.path.join(
+            PROJECT_ROOT,
+            'data',
+            'nsynth_mels',
+            partition
+        )
         json_data    = load_json(partition)
         all_metadata = process_metadata(json_data, target_instrument)
  
@@ -139,6 +144,7 @@ class NSynth(Dataset):
     def __len__(self) -> int:
         return len(self._metadata)
  
+    """
     def __getitem__(self, index: int):
         key      = self._keys[index]
         metadata = self._metadata[key]
@@ -147,41 +153,159 @@ class NSynth(Dataset):
  
         if self._transform:
             waveform = self._transform(waveform)
- 
+        mel_path = os.path.join(
+            self._mel_dir,
+            f"{key}.pt"
+        )
+
+        mel = torch.load(
+            mel_path,
+            map_location="cpu",
+            weights_only=True
+        )
+
         features  = load_features(key, self._features_dir)
         condition = build_condition(metadata)
  
-        return waveform, sr, key, metadata, features, condition
+        return waveform, mel, sr, key, metadata, features, condition
  
- 
+        
+        """
+        
+    def __getitem__(self, index: int):
+        key = self._keys[index]
+        metadata = self._metadata[key]
+
+        mel_path = os.path.join(
+            self._mel_dir,
+            f"{key}.pt"
+        )
+
+        mel = torch.load(
+            mel_path,
+            map_location="cpu",
+            weights_only=True
+        )
+
+        features = load_features(
+            key,
+            self._features_dir
+        )
+
+        condition = build_condition(metadata)
+
+        return mel, key, metadata, features, condition
+        
+        """
 def nsynth_collate_fn(batch):
+
     waveforms = torch.stack([b[0] for b in batch])
-    srs       = [b[1] for b in batch]
-    keys      = [b[2] for b in batch]
-    metadatas = [b[3] for b in batch]
- 
-    f0_list = [b[4]['f0']          for b in batch]
-    ld_list = [b[4]['loudness_db'] for b in batch]
- 
+
+    mels = torch.stack([b[1] for b in batch])
+
+    srs = [b[2] for b in batch]
+    keys = [b[3] for b in batch]
+    metadatas = [b[4] for b in batch]
+
+    f0_list = [b[5]['f0'] for b in batch]
+    ld_list = [b[5]['loudness_db'] for b in batch]
+
+    if all(t.shape == f0_list[0].shape for t in f0_list):
+
+        features = {
+            'f0': torch.stack(f0_list),
+            'loudness_db': torch.stack(ld_list),
+        }
+
+    else:
+
+        features = {
+            'f0': f0_list,
+            'loudness_db': ld_list
+        }
+
+    condition = {
+        'instrument_onehot': torch.stack(
+            [b[6]['instrument_onehot'] for b in batch]
+        ),
+        'pitch_norm': torch.stack(
+            [b[6]['pitch_norm'] for b in batch]
+        ),
+        'velocity_norm': torch.stack(
+            [b[6]['velocity_norm'] for b in batch]
+        ),
+        'brightness': torch.stack(
+            [b[6]['brightness'] for b in batch]
+        ),
+        'sustain': torch.stack(
+            [b[6]['sustain'] for b in batch]
+        ),
+    }
+         
+
+    return (
+        waveforms,
+        mels,
+        srs,
+        keys,
+        metadatas,
+        features,
+        condition
+    )
+        """
+def nsynth_collate_fn(batch):
+
+    # b[0] = mel
+    mels = torch.stack([b[0] for b in batch])
+
+    # b[1] = key
+    keys = [b[1] for b in batch]
+
+    # b[2] = metadata
+    metadatas = [b[2] for b in batch]
+
+    # b[3] = features
+    f0_list = [b[3]['f0'] for b in batch]
+    ld_list = [b[3]['loudness_db'] for b in batch]
+
     if all(t.shape == f0_list[0].shape for t in f0_list):
         features = {
-            'f0':          torch.stack(f0_list),
+            'f0': torch.stack(f0_list),
             'loudness_db': torch.stack(ld_list),
         }
     else:
-        features = {'f0': f0_list, 'loudness_db': ld_list}
- 
-    condition = {
-        'instrument_onehot': torch.stack([b[5]['instrument_onehot'] for b in batch]),
-        'pitch_norm':        torch.stack([b[5]['pitch_norm']        for b in batch]),
-        'velocity_norm':     torch.stack([b[5]['velocity_norm']     for b in batch]),
-        'brightness':        torch.stack([b[5]['brightness']        for b in batch]),
-        'sustain':           torch.stack([b[5]['sustain']           for b in batch]),
+        features = {
+            'f0': f0_list,
+            'loudness_db': ld_list,
+        }
+
+    # b[4] = condition
+    conditions = {
+        'instrument_onehot': torch.stack(
+            [b[4]['instrument_onehot'] for b in batch]
+        ),
+        'pitch_norm': torch.stack(
+            [b[4]['pitch_norm'] for b in batch]
+        ),
+        'velocity_norm': torch.stack(
+            [b[4]['velocity_norm'] for b in batch]
+        ),
+        'brightness': torch.stack(
+            [b[4]['brightness'] for b in batch]
+        ),
+        'sustain': torch.stack(
+            [b[4]['sustain'] for b in batch]
+        ),
     }
- 
-    return waveforms, srs, keys, metadatas, features, condition
- 
- 
+
+    return (
+        mels,
+        keys,
+        metadatas,
+        features,
+        conditions,
+    )
+        
 if __name__ == '__main__':
     from torch.utils.data import DataLoader
  
