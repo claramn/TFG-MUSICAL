@@ -16,7 +16,6 @@ class Scheduler(nn.Module):
     def forward(self, t):
         return self.beta[t], self.alpha[t], self.alpha_bar[t]
 
-
 class Diffuser(nn.Module):
     def __init__(self, model, scheduler):
         super().__init__()
