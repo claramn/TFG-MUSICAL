@@ -125,6 +125,8 @@ class Decoder(nn.Module):
         x = self.decoder(x)
        # print("[DEC FWD] after convT stack:", x.shape)
         return x
+    
+    
 
 
 class AutoEncoder(nn.Module):
@@ -202,10 +204,31 @@ class VAE(nn.Module):
 
         return loss
 
-    # def forward(self, x):
-        # return self.calculate_ELBO_terms(x)
+    """
     def forward(self, x):
-        B, C, H, W = x.shape
+        return self.calculate_ELBO_terms(x)
+    """ 
+
+    """
+    esta funcion define como pasa el dato por el modelo cuando llamamos a model(x)
+    en teoria deberia ir mejor pq no nos atamos a mse dentro del modelo y podemos montar una loss d audio meojor luego en el nb
+    """
+    def forward(self, x):
+        """
+        B: batch size
+        C: number of channels (normalmente 1 en espectrogramas)
+        H: height de la imagen (frecuencias en el caso de espectrogramas)
+        W: width de la imagen (tiempo en el caso de espectrogramas)
+        """
+
+        B,C,H,W = x.shape
+        _,mean, log_var = self.encoder(x)
+        log_var = torch.clamp(log_var, min=-20, max=20)
+        z = self.reparameterization(mean, log_var)
+        x_hat = self.decoder(z) #en vez d muestrear directamente de la normal, pasamos el z reparameterizado por el decoder para obtener la reconstrucción, que es lo que realmente nos interesa en el forward. El cálculo de ELBO lo hacemos en la función loss_function, que se llama desde el training loop
+        x_hat = adjust_shape(x_hat, (H, W), pad_mode='reflect')
+        kld = self.compute_kld(mean, log_var)
+        return x_hat, kld
 
         _, mu, log_var = self.encoder(x)
         log_var = torch.clamp(log_var, -20, 20)
@@ -217,3 +240,25 @@ class VAE(nn.Module):
 
         return x_hat, mu, log_var
 
+
+def compute_conv2D_output_size(input_size, kernel_size, stride, padding):
+        """
+        Compute output size of a 2D convolution.
+        input_size: tuple (H, W)
+        """
+        H_in, W_in = input_size
+        H_out = (H_in + 2 * padding[0] - kernel_size[0]) // stride[0] + 1
+        W_out = (W_in + 2 * padding[1] - kernel_size[1]) // stride[1] + 1
+        return (H_out, W_out)
+    
+def compute_convTranspose2D_output_size(input_size, kernel_size, stride, padding, output_padding=(0, 0)):
+    """
+    Calcula el tamaño de salida de una capa ConvTranspose2d (Deconvolución).
+    Fórmula: H_out = (H_in - 1) * stride - 2 * padding + kernel_size + output_padding
+    """
+    H_in, W_in = input_size
+    
+    H_out = (H_in - 1) * stride[0] - 2 * padding[0] + kernel_size[0] + output_padding[0]
+    W_out = (W_in - 1) * stride[1] - 2 * padding[1] + kernel_size[1] + output_padding[1]
+    
+    return (H_out, W_out)

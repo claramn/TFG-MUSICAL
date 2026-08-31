@@ -11,3 +11,4 @@ logs
 *.log
 .venv-ddsp
 *.pt
+precompute_mels.py
