@@ -281,6 +281,18 @@ def adjust_shape(x, target_shape, pad_mode='constant', pad_value=0):
     return x
 
 
+def compute_magnitude_and_phase_sin_cos(stft_spec):
+    # stft_spec ya viene como (B, 1, F, T), quitamos el canal antes de procesar
+    stft_spec = stft_spec.squeeze(1)  # (B, F, T)
+    
+    magnitude = stft_spec.abs().unsqueeze(1)   # (B, 1, F, T)
+    phase = torch.angle(stft_spec)
+    phase_cos = torch.cos(phase).unsqueeze(1)  # (B, 1, F, T)
+    phase_sin = torch.sin(phase).unsqueeze(1)  # (B, 1, F, T)
+    log_mag = torch.log1p(magnitude)           # (B, 1, F, T)
+    
+    return log_mag, phase_cos, phase_sin       # 3 canales
+
 def compute_conv2D_output_size(input_size, kernel_size, stride, padding):
     """
     Compute output size of a 2D convolution.

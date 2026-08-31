@@ -1,21 +1,17 @@
 import torch
 import torch.nn as nn
 import math
-from torch.utils.data import DataLoader
-from torchvision.datasets import FashionMNIST
-from torchvision.transforms import ToTensor
-import torchaudio.transforms as T
-from src.dataset_og import NSynth
 
-# Assuming device is defined elsewhere, but for now, set it here
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class Scheduler(nn.Module):
-    def __init__(self, num_epochs, beta_init=1e-4, beta_finish=0.02, device='cpu'):
+    def __init__(self, num_timesteps, beta_init=1e-4, beta_finish=0.02):
         super().__init__()
-        self.beta = torch.linspace(beta_init, beta_finish, num_epochs, device=device)
-        self.alpha = 1 - self.beta
-        self.alpha_bar = torch.cumprod(self.alpha, dim=0)
+        beta = torch.linspace(beta_init, beta_finish, num_timesteps)
+        alpha = 1 - beta
+        self.register_buffer('beta', beta)
+        self.register_buffer('alpha', alpha)
+        self.register_buffer('alpha_bar', torch.cumprod(alpha, dim=0))
 
     def forward(self, t):
         return self.beta[t], self.alpha[t], self.alpha_bar[t]
@@ -28,306 +24,396 @@ class Diffuser(nn.Module):
 
     # x: input image, t: time step
     def forward(self, x, t):
+        # e = torch.randn(1, 1, 32, 32) # ruido gaussiano
         e = torch.randn_like(x)  # ruido gaussiano mismo tamaño que x
         beta_t, alpha_t, alpha_bar_t = self.scheduler(t)
+        # para que vaya con tensores
+        # beta_t = beta_t.view(-1, 1, 1, 1)
+        # alpha_t = alpha_t.view(-1, 1, 1, 1)
+        # z = torch.sqrt(alpha_t) * x + torch.sqrt(beta_t) * e
+    
         alpha_bar_t = alpha_bar_t.view(-1, 1, 1, 1)
         z = torch.sqrt(alpha_bar_t) * x + torch.sqrt(1 - alpha_bar_t) * e
-        return z, e
-
-class Embeder(nn.Module):
-    def __init__(self, num_epochs, embed_dim, device):
+        return z, e  
+    
+class LatentDiffuser(nn.Module):
+    def __init__(self, model, scheduler):
         super().__init__()
-        position = torch.arange(num_epochs, device=device).unsqueeze(1).float()
-        div = torch.exp(torch.arange(0, embed_dim, 2, device=device).float() * -(math.log(10000.0) / embed_dim))
-        embeddings = torch.zeros(num_epochs, embed_dim, device=device)
+        self.model = model
+        self.scheduler = scheduler
+
+    # x: input image, t: time step
+    def forward(self, x, t):
+        # e = torch.randn(1, 1, 32, 32) # ruido gaussiano
+        e = torch.randn_like(x)  # ruido gaussiano mismo tamaño que x
+        beta_t, alpha_t, alpha_bar_t = self.scheduler(t)
+        # para que vaya con tensores
+        # beta_t = beta_t.view(-1, 1, 1, 1)
+        # alpha_t = alpha_t.view(-1, 1, 1, 1)
+        # z = torch.sqrt(alpha_t) * x + torch.sqrt(beta_t) * e
+    
+        alpha_bar_t = alpha_bar_t.view(-1, 1)
+        z = torch.sqrt(alpha_bar_t) * x + torch.sqrt(1 - alpha_bar_t) * e
+        return z, e      
+    
+    
+class Embedder(nn.Module):
+    def __init__(self, num_timesteps, embed_dim):
+        super().__init__()
+        position = torch.arange(num_timesteps).unsqueeze(1).float()
+        div = torch.exp(torch.arange(0, embed_dim, 2).float() * -(math.log(10000.0) / embed_dim))
+        embeddings = torch.zeros(num_timesteps, embed_dim)
         embeddings[:, 0::2] = torch.sin(position * div)
         embeddings[:, 1::2] = torch.cos(position * div)
-        self.embeddings = embeddings
+        self.register_buffer('embeddings', embeddings)
 
-    def forward(self, x, t):
-        embeds = self.embeddings[t].to(x.device)
-        return embeds[:, :, None, None]
-
+    def forward(self, t):
+        return self.embeddings[t]
+    
+    
 class DummyLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, norm_groups, emb_dim, skip=False, stride=1):
+    def __init__(self, in_channels, out_channels, norm_groups, time_dim, kernel_size=3, skip=False, stride=1):
         super().__init__()
-        self.skip = skip
-        self.stride = stride
-        if stride == 1:
-            self.conv = nn.Sequential(
-                nn.Conv2d(in_channels, out_channels, 3, padding=1),
-                nn.GroupNorm(norm_groups, out_channels),
-                nn.ReLU()
-            )
-        elif stride == -1:
-            self.conv = nn.Sequential(
-                nn.ConvTranspose2d(in_channels, out_channels, 3, padding=1, stride=2, output_padding=1),
-                nn.GroupNorm(norm_groups, out_channels),
-                nn.ReLU()
-            )
-        if self.skip:
-            self.res_conv = nn.Conv2d(out_channels, out_channels, 3, padding=1)
+        
+        if stride < 0:
+            stride = -stride
+            nnConv = nn.ConvTranspose2d
+        else:
+            nnConv = nn.Conv2d
+                    
+        self.conv = nn.Sequential(
+            nnConv(in_channels, out_channels, kernel_size, padding=(kernel_size-1)//2, stride=stride),
+            nn.BatchNorm2d(out_channels), ## EN PRINCIPIO ES MEJOR QUE GROUPNORM
+            # nn.GroupNorm(norm_groups, out_channels), ###### TODO se puede cambiar por nn.BatchNorm2d(out_channels) para mayor eficiencia
+            # nn.ReLU() ###### TODO se puede cambiar por nn.SiLU() para mayor eficiencia
+            nn.SiLU()
+        )
+        
+        self.last_silu = nn.SiLU()
+
+        self.res_conv = nnConv(out_channels, out_channels, 3, padding=1, stride=stride)
+        
+        self.time_proj = nn.Linear(time_dim, out_channels)
+        self.channel_proj = nnConv(in_channels, out_channels, 1)
+        
+        self.skip_conv = None
+        if skip:
+            self.skip_conv = nnConv(in_channels, in_channels, kernel_size=1, stride=1)  # Adapta los canales del skip a los canales de salida de la capa
+    
+    def forward(self, x, t_emb):
+        
+        skip = None
+        if self.skip_conv is not None:
+            # sin adaprtar el skip, lo sumamos directamente
+            skip = self.skip_conv(x)
+        
+        out = self.conv(x)
+        t = self.time_proj(t_emb)
+        t = t[:, :, None, None]
+        out = out + t
+        out = self.res_conv(out)
+        # TODO esto no se si dará error
+        out = out + self.channel_proj(x)  # ← residual connection, was missing
+        out = self.last_silu(out)
+
+        return out, skip
+    
+class DownLayer(nn.Module):
+    def __init__(self, in_channels, out_channels, norm_groups, time_dim, kernel_size=3, skip=False, stride=1):
+        super().__init__()
+
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size, padding=(kernel_size-1)//2, stride=stride),
+            nn.BatchNorm2d(out_channels),
+            nn.SiLU()
+        )
+
+        self.last_silu = nn.SiLU()
+        self.res_conv = nn.ConvTranspose2d(out_channels, out_channels, 4, padding=1, stride=stride)
+        self.time_proj = nn.Linear(time_dim, out_channels)
+        self.channel_proj = nn.Conv2d(in_channels, out_channels, 1)
+
+        self.skip_conv = None
+        if skip:
+            self.skip_conv = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1)
 
     def forward(self, x, t_emb):
+
+        skip = None
+        if self.skip_conv is not None:
+            # sin adaptar el skip, lo sumamos directamente
+            skip = self.skip_conv(x)
+
         out = self.conv(x)
-        if self.skip:
-            res = self.res_conv(out)
-            return out, res
-        else:
-            return out
+        t = self.time_proj(t_emb)
+        t = t[:, :, None, None]
+        out = out + t
+        out = self.res_conv(out)
+        # TODO esto no se si dará error
+        out = out + self.channel_proj(x)  # ← residual connection, was missing
+        out = self.last_silu(out)
+
+        return out, skip
+
+
+class UpLayer(nn.Module):
+    def __init__(self, in_channels, out_channels, norm_groups, time_dim, kernel_size=3, skip=False, stride=1):
+        super().__init__()
+
+        self.conv = nn.Sequential(
+            nn.ConvTranspose2d(in_channels, out_channels, kernel_size, padding=(kernel_size-1)//2, stride=stride),
+            nn.BatchNorm2d(out_channels),
+            nn.SiLU()
+        )
+
+        self.last_silu = nn.SiLU()
+        self.res_conv = nn.Conv2d(out_channels, out_channels, 4, padding=1, stride=stride)
+        self.time_proj = nn.Linear(time_dim, out_channels)
+        self.channel_proj = nn.ConvTranspose2d(in_channels, out_channels, 1)
+
+        self.skip_conv = None
+        if skip:
+            self.skip_conv = nn.ConvTranspose2d(in_channels, in_channels, kernel_size=1, stride=1)
+
+    def forward(self, x, t_emb):
+
+        skip = None
+        if self.skip_conv is not None:
+            # sin adaptar el skip, lo sumamos directamente
+            skip = self.skip_conv(x)
+
+        out = self.conv(x)
+        t = self.time_proj(t_emb)
+        t = t[:, :, None, None]
+        out = out + t
+        out = self.res_conv(out)
+        # TODO esto no se si dará error
+        out = out + self.channel_proj(x)  # ← residual connection, was missing
+        out = self.last_silu(out)
+
+        return out, skip
+
+class BottleneckLatent(nn.Module):
+    def __init__(self, hidden_dim: int, time_dim: int):
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
+        self.norm = nn.LayerNorm(hidden_dim)
+        self.time_proj = nn.Linear(time_dim, hidden_dim)
+
+    def forward(self, x, t_emb):
+        t = self.time_proj(t_emb)
+        x = x + self.block(self.norm(x)) + t  # residual + condicionamiento temporal
+        return x, x  # devuelve (output, skip) igual que NoopLatentLayer
+
+class NoopLayer(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, t_emb):
+        return x, x
+
+class NoopLatentLayer(NoopLayer):
+    def forward(self, x, t_emb):
+        return x, x
 
 class DiffusionModel(nn.Module):
-    def __init__(self, layer_channels, norm_groups, up_layers, down_layers, bottleneck, embedder, input_channels=1, output_channels=1):
+    def __init__(self, 
+            layer_channels:tuple[int, int], # canales de entrada y salida de las capas de downsampling y upsampling
+            norm_groups:int, 
+            embedder:nn.Module, 
+            down_layers:list[nn.Module],
+            bottleneck:nn.Module=None, 
+            up_layers:list[nn.Module]=None, 
+            input_channels=1, 
+            output_channels=1,
+            config: dict = None
+        ):
+        '''
+            - input_channels: canales de entrada 
+            - output_channels: canales de salida
+            - layer_chanels: 
+                -> 0: canales de salida a las capas de downsampling
+                -> 1: canales de entrada de las capas de downsampling
+            - layers
+                * down_layers: capas de downsampling 
+                * up_layers: capas de upsampling
+                * bottleneck: capa que va a procesar el resultado de las capas de downsampling antes de pasarlo a las capas de upsampling
+                    - transforma lc[0] a lc[1]
+            - embedder: objeto que va a hacer el embedding del tiempo
+            - channels: 
+                0. canales de salida de la primera convolucion
+                1. canales de salida de la ultima convolucion
+        '''
+        
         super().__init__()
+        
+        self.config = config or {}
+        
         self.relu = nn.ReLU()
-        sin, sout = layer_channels
+        self.channels = layer_channels
+        
+        # nnConvxd = nn.Conv1d if dims == 1 else nn.Conv2d
+
+        
+        # aparentemente esto va de hacer redes convolucionales
+        # self.conv_in = nn.Conv2d(input_channels, channels[0], kernel_size=3, padding=1),
+
+        
         self.conv_in = nn.Sequential(
-            nn.Conv2d(input_channels, sin, kernel_size=3, padding=1),
-            nn.GroupNorm(norm_groups, sin),
+            nn.Conv2d(input_channels, layer_channels[0], kernel_size=3, padding=1),
+            nn.GroupNorm(norm_groups, layer_channels[0]),
             nn.ReLU()
         )
+        
+        # self.conv_out = nn.Conv2d(channels[1], output_channels, kernel_size=3, padding=1)
+
         self.conv_out = nn.Sequential(
-            nn.GroupNorm(norm_groups, sout),
+            nn.GroupNorm(norm_groups, layer_channels[1]),
             nn.ReLU(),
-            nn.Conv2d(sout, output_channels, kernel_size=3, padding=1),
+            nn.Conv2d(layer_channels[1], output_channels, kernel_size=3, padding=1),
         )
-        self.embeder = embedder
+        
+        self.embedder = embedder
         self.down_layers = down_layers
-        self.bottleneck = bottleneck
         self.up_layers = up_layers
-        
+        self.bottleneck = bottleneck or NoopLayer() # si no se proporciona un bottleneck, se usa una capa identidad
+    
     def forward(self, x, t):
-        return self.forward_withres(x, t)
-    
-    def forward_withres(self, x, t):
-        B, C, H, W = x.shape
-        x = self.conv_in(x)
-        t_emb = self.embeder(x, t)
-        residuals = []
+        og_size = x.shape[2:]
+        
+        # B, C, H, W = x.shape # batch, canales, altura, anchura
+        
+        x = self.conv_in(x) # adapta el tamaño de x a los canales de entrada de las capas
+        t_emb = self.embedder(t) # obtiene el embedding del tiempo
+        skips = []
+        
+        ''' Las capas son las encargadas de decidir si aplican o no el skip o los residuales'''
+        
         for layer in self.down_layers:
-            x, r = layer(x, t_emb)
-            residuals.append(r)
-        x = self.bottleneck(x, t_emb)
-        for layer in self.up_layers:
-            r = residuals.pop()
-            x = torch.concat((x, r), dim=1)
-            x = layer(x, t_emb)
-        return self.conv_out(x)
-
-def train_old(input_size, epochs, batch_size=16, lr=1e-3):
-    layers = [
-        DummyLayer(64, 128, 8).to(device),
-        DummyLayer(128, 128, 8).to(device),
-    ]
-    embedder = Embeder(num_epochs=epochs, embed_dim=128)
-    model = DiffusionModel(
-        channels=[64, 128],
-        norm_groups=8,
-        layers=layers,
-        embedder=embedder,
-        input_channels=1,
-        output_channels=1        
-    ).to(device)
-    
-    best_loss = 1
-    
-    train_loader = DataLoader(NSynth('training'), batch_size=batch_size, shuffle=True,  pin_memory=True)
-    scheduler = Scheduler(num_epochs=epochs).to(device)
-    diffuser = Diffuser(model, scheduler).to(device)
-    
-    optimizer = torch.optim.Adam(diffuser.parameters(), lr=lr)
-    
-    mse_loss = nn.MSELoss()
+            x, s = layer(x, t_emb) # procesa x con la capa y devuelve el resultado y el skip (si la capa lo tiene)
+            skips.append(s) # guarda el skip para usarlo en las capas de upsampling
+            
+        x, _ = self.bottleneck(x, t_emb) # procesa el resultado de las capas de downsampling con el bottleneck
         
-    for epoch in range(epochs):
-        for wave, _, _, _ in train_loader:
-            wave = wave.to(device)
-            x = stft_transform(wave)
-            
-            x = x.to(device)
-            batch_size = x.size(0)
-            t = torch.randint(0, epochs, (batch_size,), device=device)
+        for i, layer in enumerate(self.up_layers):
+            skip = skips.pop() # obtiene el skip correspondiente a la capa
+            # print(f"up[{i}] - x: {x.shape}, skip: {skip.shape if skip is not None else None}")
 
-            z, e = diffuser(x, t)
-            e_pred = model(z, t)
+            if skip is not None:
+                # TODO getionar esto
+                if skip.shape[2:] == x.shape[2:]: # si el skip tiene el mismo número de canales que x, lo sumamos
+                    # TODO arreglar esto en las capas 
+                    x = torch.cat([x, skip], dim=1) # concatenamos el skip a la entrada de la capa de upsampling
+                    # x = x + skip # sumamos el skip a la entrada de la capa de upsampling
+                else: # si el skip tiene un número diferente de canales, lo adaptamos con una convolución y luego lo sumamos
+                    # TODO borrar:
+                    # print('ha sido necesario interpolar el skip')
+                    # print(f'size_pre: {skip[2:]}')
+                    skip = nn.functional.interpolate(skip, size=x.shape[2:], mode="bilinear", align_corners=False)
+                    # print(f'size_post: {skip[2:]}')
 
-            loss = mse_loss(e_pred, e)
+                    ##### TODO
+                    ''' Posible mejora: nn.ConvTranspose2d(in_ch, out_ch, kernel_size=2, stride=2) en vez de interpolate'''
+                    ''' Tmb decia de guardar el skip fuera o algo asi'''
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            
-        if epoch % 10 == 0:
-            print(f"Epoch {epoch}, Loss: {loss.item()}")
-            
-        if loss.item() < best_loss:
-            best_loss = loss.item()
-            print(f"Model saved at epoch {epoch} with loss {best_loss}")
-    
-    return model, scheduler
-
-def train_minst(input_size, epochs, batch_size=16, lr=1e-3, path=r'C:\Users\Articuno\Desktop\TFG-info\data\mnist'):
-    layers = [
-        DummyLayer(64, 128, 8).to(device),
-        DummyLayer(128, 128, 8).to(device),
-    ]
-    embedder = Embeder(num_epochs=epochs, embed_dim=128)
-    model = DiffusionModel(
-        channels=[64, 128],
-        norm_groups=8,
-        layers=layers,
-        embedder=embedder,
-        input_channels=1,
-        output_channels=1        
-    ).to(device)
-    
-    best_loss = 1
-    
-    train_ds = FashionMNIST(root=path, train=True,  download=True, transform=ToTensor())
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,  pin_memory=True)
-    scheduler = Scheduler(num_epochs=epochs).to(device)
-    diffuser = Diffuser(model, scheduler).to(device)
-    
-    optimizer = torch.optim.Adam(diffuser.parameters(), lr=lr)
-    
-    mse_loss = nn.MSELoss()
+                    x = torch.cat([x, skip], dim=1) # concatenamos el skip a la entrada de la capa de upsampling
+                    # print(f'ERROR: skip shape {skip.shape} != x shape {x.shape}')
+                # print(f"up[{i}] - x after cat: {x.shape}")
         
-    for epoch in range(epochs):
-        for x, _ in train_loader:
-            x = x.to(device)
-            batch_size = x.size(0)
-            t = torch.randint(0, epochs, (batch_size,), device=device)
+                    
+            x, _ = layer(x, t_emb) # procesa x con la capa de upsampling
+            # print(f"up[{i}] - x after layer: {x.shape}")
 
-            z, e = diffuser(x, t)
-            e_pred = model(z, t)
-
-            loss = mse_loss(e_pred, e)
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
             
-        if epoch % 10 == 0:
-            print(f"Epoch {epoch}, Loss: {loss.item()}")
-            
-        if loss.item() < best_loss:
-            best_loss = loss.item()
-            torch.save(model.state_dict(), r'C:\Users\Articuno\Desktop\TFG-info\data\models\diff_mnist.pth')
-            print(f"Model saved at epoch {epoch} with loss {best_loss}")
+        x = self.conv_out(x) # adapta el tamaño de x a los canales de salida  
+        if x.shape[2:] != og_size:
+            x = nn.functional.interpolate(x, size=og_size, mode="bilinear", align_corners=False)
+        return x
     
-    return model, scheduler
-
-def train(input_size, epochs=1000, batch_size=16, lr=1e-3, path=r'C:\Users\Articuno\Desktop\TFG-info\data\models\diff.pth'):
-    layers = [
-        DummyLayer(64, 128, 8).to(device),
-        DummyLayer(128, 128, 8).to(device),
-    ]
-    embedder = Embeder(num_epochs=epochs, embed_dim=128)
-    model = DiffusionModel(
-        channels=[64, 128],
-        norm_groups=8,
-        layers=layers,
-        embedder=embedder,
-        input_channels=1,
-        output_channels=1        
-    ).to(device)
+    def get_config(self):
+        return self.config
     
-    best_loss = 1
-    
-    train_loader = DataLoader(NSynth('training'), batch_size=batch_size, shuffle=True,  pin_memory=True)
-    scheduler = Scheduler(num_epochs=epochs).to(device)
-    diffuser = Diffuser(model, scheduler).to(device)
-    
-    optimizer = torch.optim.Adam(diffuser.parameters(), lr=lr)
-    scaler = torch.cuda.amp.GradScaler()
-    mse_loss = nn.MSELoss()
+class LatentDiffusionMLP(nn.Module):
+    def __init__(self,
+            latent_dim: int,          # equivalente a input_channels/output_channels
+            hidden_dims: list,          # equivalente a layer_channels
+            blocks_up: nn.ModuleList,
+            blocks_down: nn.ModuleList,
+            norms_up: nn.ModuleList,
+            norms_down: nn.ModuleList,
+            embedder: nn.Module,      # igual que DiffusionModel
+            bottleneck: nn.Module = None,  # igual que DiffusionModel
+            config: dict = None
+        ):
+        '''
+            - latent_dim: tamaño del vector latente del VAE (200)
+            - hidden_dim: tamaño del espacio interno de la red (512)
+            - embedder: objeto que hace el embedding del tiempo (igual que DiffusionModel)
+            - depth: número de bloques residuales
+            - bottleneck: capa opcional en el centro de la red
+        '''
+        super().__init__()
         
-    for epoch in range(epochs):
-        for wave, _, _, _ in train_loader:
-            wave = wave.to(device)
-            with torch.cuda.amp.autocast():
-                x = stft_transform(wave)
-                batch_size = x.size(0)
-                t = torch.randint(0, epochs, (batch_size,), device=device)
-                z, e = diffuser(x, t)
-                e_pred = model(z, t)
-                loss = mse_loss(e_pred, e)
+        self.config = config or {}
 
-            optimizer.zero_grad()
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+        # Proyecta latente al espacio interno
+        self.proj_in = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dims[0]),
+            nn.LayerNorm(hidden_dims[0]),
+            nn.ReLU()
+        )
 
-        if epoch % 10 == 0:
-            print(f"Epoch {epoch}, Loss: {loss.item()}")
-            
-        if loss.item() < best_loss:
-            best_loss = loss.item()
-            torch.save(model.state_dict(), path)
-            print(f"Model saved at epoch {epoch} with loss {best_loss}")
-    
-    return model, scheduler
+        # Proyecta espacio interno de vuelta al latente
+        self.proj_out = nn.Sequential(
+            nn.LayerNorm(hidden_dims[0]),
+            nn.ReLU(),
+            nn.Linear(hidden_dims[0], latent_dim)
+        )
 
-@torch.no_grad()
-def sample_images_2(model, scheduler, num_images=4, image_size=(1, 28, 28)):
-    model.eval()
-
-    x = torch.randn(num_images, *image_size, device=device)
-    T = scheduler.beta.size(0)
-
-    betas = scheduler.beta
-    alphas = scheduler.alpha
-    alpha_bars = scheduler.alpha_bar
-
-    for t in reversed(range(T)):
-        t_batch = torch.full((num_images,), t, device=device, dtype=torch.long)
-
-        e_pred = model(x, t_batch)
+        # Bloques residuales con condicionamiento temporal
+        self.blocks_up = blocks_up
+        self.blocks_down = blocks_down
+        self.norms_up = norms_up
+        self.norms_down = norms_down
         
-        beta_t = betas[t]
-        alpha_t = alphas[t]
-        alpha_bar_t = alpha_bars[t]
 
-        coef1 = 1 / torch.sqrt(alpha_t)
-        coef2 = beta_t / torch.sqrt(1 - alpha_bar_t)
+        # Proyección del embedding temporal a hidden_dim
+        self.time_proj = nn.Sequential(
+            nn.Linear(embedder.embeddings.shape[1], hidden_dims[-1]),
+            nn.SiLU(),
+            nn.Linear(hidden_dims[-1], hidden_dims[-1]),
+        )
 
-        mu = coef1 * (x - coef2 * e_pred)
+        self.embedder = embedder
+        self.bottleneck = bottleneck or NoopLatentLayer()
 
-        if t > 0:
-            noise = torch.randn_like(x)
-            sigma_t = torch.sqrt(beta_t)
-            x = mu + sigma_t * noise
-        else:
-            x = mu
+    def forward(self, x, t):
+        t_emb = self.time_proj(self.embedder(t))  # [B, hidden_dims[-1]]
 
-    x = x.clamp(0, 1).cpu()
-    return x
+        x = self.proj_in(x)   # [B, latent_dim] → [B, hidden_dims[0]]
 
-@torch.no_grad()
-def sample_images(model, scheduler, num_images=4, image_size=(1, 28, 28)):
-    model.eval()
+        # Down
+        skips = []
+        for block, norm in zip(self.blocks_down, self.norms_down):
+            skips.append(x)
+            x = block(norm(x))
+
+        x = x + t_emb         # [B, hidden_dims[-1]]
+
+        x, _ = self.bottleneck(x, t_emb)
+
+        # Up
+        for block, norm in zip(self.blocks_up, self.norms_up):
+            skip = skips.pop()
+            x = torch.cat([x, skip], dim=-1)
+            x = block(norm(x))
+
+        x = self.proj_out(x)  # [B, hidden_dims[0]] → [B, latent_dim]
+        return x
     
-    x = torch.randn(num_images, *image_size, device=device)
-    T = scheduler.beta.size(0)
-    
-    for t in reversed(range(T)):
-        t_batch = torch.tensor([t]*num_images, device=device)
-        e_pred = model(x, t_batch)
-        beta_t, alpha_t = scheduler(t_batch)
-        beta_t = beta_t.view(-1, 1, 1, 1)
-        alpha_t = alpha_t.view(-1, 1, 1, 1)
-        
-        x = (x - torch.sqrt(beta_t) * e_pred) / torch.sqrt(alpha_t)
-    
-    x = x.clamp(0, 1).cpu()
-    return x
-
-# STFT transform for audio
-sample_rate = 16000
-n_fft = 1500
-hop_length = 250
-win_length = n_fft
-stft_transform = T.Spectrogram(
-    n_fft=n_fft, win_length=win_length, hop_length=hop_length,
-    power=2.0, onesided=False, center=False
-).to(device)
+    def get_config(self):
+        return self.config
