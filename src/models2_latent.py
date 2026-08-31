@@ -395,7 +395,7 @@ class ConditionalVAE(nn.Module):
 
     def __init__(self, input_size=(80, 128), latent_dim=256,
                  channels=None, condition_dim=128,
-                 n_frames=100, n_harmonics=64, ddsp_hidden=256):
+                 n_frames=100, n_harmonics=64, ddsp_hidden=256, free_bits=0.0):
         super().__init__()
 
         if channels is None:
@@ -403,6 +403,7 @@ class ConditionalVAE(nn.Module):
 
         self.latent_dim    = latent_dim
         self.condition_dim = condition_dim
+        self.free_bits = free_bits
 
         #  Módulos 
         self.condition_embedder = ConditionEmbedder(condition_dim)
@@ -424,9 +425,29 @@ class ConditionalVAE(nn.Module):
 
     # KL divergence 
     @staticmethod
-    def kld(mu, logvar):
+    def kld(mu, logvar,free_bits=0.0):
         """KL( q(z|x) || N(0,I) ), sumada por canal Y por posición espacial."""
-        return -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=[1, 2, 3])  # (B,)
+        
+        # KL individual para cada posición del mapa latente
+        # Shape: (B, latent_dim, H_lat, W_lat)
+        kl_per_unit = -0.5 * (
+            1 + logvar - mu.pow(2) - logvar.exp()
+        )
+
+        # Free Bits:
+        # Cada unidad latente puede tener hasta `free_bits`
+        # de KL sin ser penalizada adicionalmente.
+        if free_bits > 0:
+            kl_per_unit = torch.clamp(
+                kl_per_unit,
+                min=free_bits
+            )
+
+        # Sumamos todos los canales y posiciones espaciales
+        # Shape final: (B,)
+        kl = kl_per_unit.sum(dim=[1, 2, 3])
+
+        return kl
 
     #  Condición: calcula c y la expande de (B,cond,1,1) a (B,cond,H,W) 
     def _condition_map(self, instrument_onehot, pitch_norm, velocity_norm,
@@ -475,9 +496,9 @@ class ConditionalVAE(nn.Module):
         ddsp_params = self.decoder_ddsp(zc)
 
         # 5. KL
-        kl = self.kld(mu, logvar)                                # (B,)
+        kl = self.kld(mu, logvar,free_bits=self.free_bits)                                # (B,)
 
-        return mel_hat, ddsp_params, kl
+        return mel_hat, ddsp_params, kl, mu,logvar
 
     #  Sampling (inferencia / demo) 
     @staticmethod
