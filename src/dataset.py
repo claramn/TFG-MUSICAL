@@ -6,41 +6,6 @@ from src.utils.dataset import *
 from src.utils.audio_utils import *
 from torch.utils.data import Dataset
 import os
-import torch
-from src.utils.dataset import (
-    load_json,
-    process_metadata,
-    load_raw_waveform,
-    build_condition,
-)
- 
- 
-"""
-CAMBIOS CLAVE PARA LA ETIQUETACION
-etiquetas reales para el conditional vae 
-__getitem__ devuelve:
-waveform: tensor(1,t)   audio crudo
-sample_rate: int
-key: str    identificador del sample
-metadata: dict  metadata og del json
-features: dict  f0 y loudness dsd .pt
-condition: dict     bandeja completa lista para el modelo:
-    instrument_onehot (11,) float32 familia d instrumento
-    pitch_norm      (1,) float32    MIDI/127 ->[0,1]
-    velocity_norm   (1,) float32    velocity/127 -> [0,1]
-    brightness      (1,) float32     derivado de qualities[0] (bright) y qualities[1] (dark)
-    sustain         (1,) float32    derivado d qualities[4] (long realease)
-    
-Familias de instrumento (instrument_family 0-10):
-  0  bass       1  brass      2  flute      3  guitar
-  4  keyboard   5  mallet     6  organ      7  reed
-  8  string     9  synth_lead 10 vocal
- 
-Qualities (índices del vector de 10):
-  0 bright  1 dark  2 distortion  3 fast_decay  4 long_release
-  5 multiphonic  6 nonlinear_env  7 percussive  8 reverb  9 tempo-synced
-    
-"""
 
 #CONSTANTES NSYNTH
 N_FAMILIES    = 11
@@ -332,3 +297,112 @@ if __name__ == '__main__':
     print(f'  instrument_onehot  : {conds["instrument_onehot"].shape}')
     print(f'  pitch_norm         : {conds["pitch_norm"].shape}')
     print('collate_fn OK ✓')
+        # Return (waveform, sample_rate, key, metadata)
+    return waveform, sample_rate, key, metadata
+
+class LatentBatchDataset(torch.utils.data.Dataset):
+    def __init__(self, save_dir):
+        self.files = sorted(
+            [os.path.join(save_dir, f) for f in os.listdir(save_dir) if f.endswith('.pt')]
+        )
+        # Índice: para cada muestra global, sabemos en qué archivo y qué posición está
+        self.index = []
+        for file_idx, f in enumerate(self.files):
+            n = torch.load(f, map_location='cpu', weights_only=True).shape[0]
+            self.index.extend([(file_idx, i) for i in range(n)])
+        self._cache_file_idx = None
+        self._cache_tensor = None
+
+    def __len__(self):
+        return len(self.index)
+
+    def __getitem__(self, idx):
+        file_idx, pos = self.index[idx]
+        if file_idx != self._cache_file_idx:
+            self._cache_tensor = torch.load(self.files[file_idx], map_location='cpu')
+            self._cache_file_idx = file_idx
+        return self._cache_tensor[pos]
+    
+import os
+import random
+import torch
+from torch.utils.data import IterableDataset, get_worker_info
+
+class ShardedLatentDataset(IterableDataset):
+    '''
+    Dataset de latentes troceados en varios .pt (shards).
+
+    - Cada shard se carga del disco una sola vez por época (no N veces por muestra).
+    - Los shards se reparten entre workers del DataLoader (sin duplicar trabajo).
+    - Shuffle real: se mezcla el orden de los shards + un buffer que combina
+      varios shards cargados a la vez, para que muestras de distintos shards
+      se intercalen (en vez de servir un shard entero seguido).
+    '''
+
+    def __init__(self, save_dir, shuffle=True, shard_buffer=2, seed=0):
+        self.files = sorted(
+            os.path.join(save_dir, f) for f in os.listdir(save_dir) if f.endswith('.pt')
+        )
+        self.shuffle = shuffle
+        self.shard_buffer = max(1, shard_buffer)  # nº de shards mezclados a la vez
+        self.epoch = 0
+        self.seed = seed
+
+        # tamaño total, solo para poder usar len() si hace falta (p.ej. logging)
+        self._len = sum(
+            torch.load(f, map_location='cpu', mmap=True, weights_only=True).shape[0]
+            for f in self.files
+        )
+
+    def __len__(self):
+        return self._len
+
+    def set_epoch(self, epoch):
+        # llamar al principio de cada época para que el shuffle cambie entre épocas
+        self.epoch = epoch
+
+    def _shard_order(self):
+        files = list(self.files)
+        if self.shuffle:
+            rng = random.Random(self.seed + self.epoch)
+            rng.shuffle(files)
+        return files
+
+    def __iter__(self):
+        worker_info = get_worker_info()
+        files = self._shard_order()
+
+        # reparte shards entre workers (cada worker procesa un subconjunto disjunto)
+        if worker_info is not None:
+            files = files[worker_info.id::worker_info.num_workers]
+
+        rng = random.Random(self.seed + self.epoch + (worker_info.id if worker_info else 0))
+
+        buffer = []  # buffer de muestras mezclando varios shards
+        pending_shards = list(files)
+
+        def load_shard(path):
+            t = torch.load(path, map_location='cpu', weights_only=True)
+            idxs = list(range(t.shape[0]))
+            if self.shuffle:
+                rng.shuffle(idxs)
+            return t, idxs
+
+        loaded = []  # lista de (tensor, idxs_restantes) cargados actualmente
+
+        while pending_shards or loaded or buffer:
+            # rellena el pool de shards cargados hasta shard_buffer
+            while pending_shards and len(loaded) < self.shard_buffer:
+                loaded.append(load_shard(pending_shards.pop()))
+
+            if not loaded:
+                break
+
+            # elige un shard al azar del pool cargado y saca una muestra
+            shard_i = rng.randrange(len(loaded)) if self.shuffle else 0
+            tensor, idxs = loaded[shard_i]
+            pos = idxs.pop()
+            yield tensor[pos]
+
+            if not idxs:
+                loaded.pop(shard_i)  # shard agotado, se libera de memoria
