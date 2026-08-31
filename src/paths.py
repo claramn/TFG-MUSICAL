@@ -41,6 +41,16 @@ PATHS = {
         'validation_norm_params' :  _root + r"\vae_diffusion\dataset\validation\stats.json",
         'checkpoint': _root + r"\vae_diffusion\checkpoint.pth",
     },
+    'cvae_diffusion' : {
+        'model': _root + r"\cvae_diffusion\model.pth",
+        'config': _root + r"\cvae_diffusion\config.json",
+        'scheduler': _root + r"\cvae_diffusion\scheduler.pth",
+        'dataset_training' : _root + r"\cvae_diffusion\dataset\training",
+        'dataset_validation' : _root + r"\cvae_diffusion\dataset\validation",
+        'training_norm_params' :  _root + r"\cvae_diffusion\dataset\training\stats.json",
+        'validation_norm_params' :  _root + r"\cvae_diffusion\dataset\validation\stats.json",
+        'checkpoint': _root + r"\cvae_diffusion\checkpoint.pth",
+    },
     'autoencoder_diffusion' : {
         'model': _root + r"\autoencoder_diffusion\model.pth",
         'config': _root + r"\autoencoder_diffusion\config.json",
