@@ -270,35 +270,6 @@ def nsynth_collate_fn(batch):
         features,
         conditions,
     )
-        
-if __name__ == '__main__':
-    from torch.utils.data import DataLoader
- 
-    ds = NSynth('training', require_features=False)
-    print(f'Dataset size: {len(ds)}\n')
- 
-    waveform, sr, key, metadata, features, condition = ds[0]
- 
-    print(f'key             : {key}')
-    print(f'waveform        : {waveform.shape}   sr={sr}')
-    print(f'pitch (MIDI)    : {metadata["pitch"]}  →  pitch_norm={condition["pitch_norm"].item():.4f}')
-    print(f'velocity        : {metadata["velocity"]}  →  velocity_norm={condition["velocity_norm"].item():.4f}')
-    print(f'instrumento     : {metadata["instrument_family_str"]}')
-    print(f'qualities       : {metadata["qualities"]}')
-    print(f'brightness      : {condition["brightness"].item():.1f}')
-    print(f'sustain         : {condition["sustain"].item():.1f}')
-    print(f'f0 shape        : {features["f0"].shape}')
-    print(f'loudness shape  : {features["loudness_db"].shape}')
- 
-    loader = DataLoader(ds, batch_size=4, shuffle=False, collate_fn=nsynth_collate_fn)
-    wvs, _, _, _, feats, conds = next(iter(loader))
-    print(f'\nDataLoader batch:')
-    print(f'  waveforms          : {wvs.shape}')
-    print(f'  instrument_onehot  : {conds["instrument_onehot"].shape}')
-    print(f'  pitch_norm         : {conds["pitch_norm"].shape}')
-    print('collate_fn OK ✓')
-        # Return (waveform, sample_rate, key, metadata)
-    return waveform, sample_rate, key, metadata
 
 class LatentBatchDataset(torch.utils.data.Dataset):
     def __init__(self, save_dir):
