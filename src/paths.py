@@ -15,6 +15,10 @@ PATHS = {
         'model' : _root + r"\models\latent_VAE.pth",
         'checkpoint' : _root + r"\models\latent_VAE_check.pth"
     },
+    'cVAE_2D' : {
+        'model' : _root + r"\models\latent_cVAE.pth",
+        'checkpoint' : _root + r"\models\latent_cVAE_check.pth"
+    },
     'minst_VAE' : {
         'model' : _root + r"\models\minst.pth"
     },
@@ -55,6 +59,26 @@ PATHS = {
     
 }
 
+# VAE parameters
 VAE_LATENT_DIM = 64
 VAE_CHANNELS = [2, 16, 32, 64, 128]
 VAE_STRIDES = [(2,2), (2,2), (2,1), (1,1)]
+VAE_INPUT_HEIGHT = 1500
+VAE_INPUT_WIDTH = 251
+VAE_INPUT_SIZE = (VAE_INPUT_HEIGHT, VAE_INPUT_WIDTH)
+
+# cVAE parameters
+CVAE_LATENT_DIM = 128
+CVAE_CHANNELS = [1, 32, 64, 128, 256]
+CVAE_CONDITION_DIM = 128
+CVAE_N_HARMONICS = 64
+CVAE_DDSP_HIDDEN = 256
+CVAE_N_MELS = 80
+CVAE_MAX_FRAMES = 128
+CVAE_INPUT_SIZE = (CVAE_N_MELS, CVAE_MAX_FRAMES)
+
+AE_INPUT_HEIGHT = 4000 # = n_fft because onesided=False
+AE_INPUT_WIDTH = 201 # = 1 + floor((T - n_ftt) / hop_length), where T is the whole duration (4 * 16000 = 64000)
+AE_LATENT_DIM = 200 # TODO seguramente deba cambiarlo a 8
+AE_CHANNELS = [2, 16, 32, 64]
+AE_INPUT_SIZE = (AE_INPUT_HEIGHT, AE_INPUT_WIDTH)

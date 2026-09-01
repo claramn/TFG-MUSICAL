@@ -1,0 +1,28 @@
+CVAE:
+    Mover 08_cVAE_2D.ipynb a 11_CVAE_2D.ipynb y reordenar su código
+
+    TODO:
+        Cambiar el path del modelo para que vaya con paths y mover el .pt al path correcto
+        Mover la parte de extraer los latentes a otro notebook
+        Rehacer la parte de entrenar el modelo de difusion 
+
+00_examples.ipynb:
+    Hacer el código:
+        hacer un load model para cada modelo: 
+            estaría bien usar paths.py para los valores finales de los modelos, o tambien se podrian cargar las configs a un json
+
+        hacer un sample para cada modelo
+
+    Samplear un monton de audios y guardarlos
+    Comparar esos audos usando 00_evaluations.ipynb
+
+Difusion:
+    Limpiar el notebook 07_diffusion_training.ipynb
+    Eliminar diffusion_usage
+
+Reordenar los ipynbs
+
+
+SRC:
+    eliminar los modelos que no se usan
+    renombrar bien los modelos que se usan
