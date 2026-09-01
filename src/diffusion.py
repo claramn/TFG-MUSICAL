@@ -70,7 +70,6 @@ class Embedder(nn.Module):
     def forward(self, t):
         return self.embeddings[t]
     
-    
 class DummyLayer(nn.Module):
     def __init__(self, in_channels, out_channels, norm_groups, time_dim, kernel_size=3, skip=False, stride=1):
         super().__init__()

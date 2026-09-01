@@ -57,6 +57,8 @@ def setup_latent_model(timesteps=1000, emb_dim=128, hidden_dims=32, latent_dim=8
     #### OPCION 2 ########
     ######################
     
+    
+    
     # Down
     down_layers = []
     in_ch = hidden_dims
