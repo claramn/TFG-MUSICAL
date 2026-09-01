@@ -1,6 +1,5 @@
 CVAE:
     Cambiar el path del modelo para que vaya con paths y mover el .pt al path correcto
-    Mover la parte de extraer los latentes a otro notebook
     Rehacer la parte de entrenar el modelo de difusion 
 
 00_examples.ipynb:
@@ -30,3 +29,5 @@ SRC:
 HECHOS
     Mover 08_cVAE_2D.ipynb a 11_CVAE_2D.ipynb y reordenar su código
     Funciones para cargar los modelos codificadores
+    Mover la parte de extraer los latentes a otro notebook
+
