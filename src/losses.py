@@ -2,6 +2,123 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+class MultiScaleSTFTLoss(nn.Module):
+    """
+    Multi-scale STFT loss for perceptually accurate audio reconstruction.
+    
+    Computes L1 loss on log-magnitude spectrograms at multiple scales,
+    inspired by pc-ddsp and DDSP vocoder literature.
+    
+    Args:
+        n_fft_list: list of FFT sizes (e.g., [512, 1024, 2048])
+        hop_length_list: list of hop lengths
+        win_length_list: list of window lengths
+        sample_rate: sample rate (for Hann window registration)
+    """
+    
+    def __init__(
+        self,
+        n_fft_list=None,
+        hop_length_list=None,
+        win_length_list=None,
+        sample_rate=16000,
+    ):
+        super().__init__()
+        
+        if n_fft_list is None:
+            n_fft_list = [512, 1024, 2048]
+        if hop_length_list is None:
+            hop_length_list = [50, 120, 240]
+        if win_length_list is None:
+            win_length_list = [512, 1024, 2048]
+        
+        self.n_fft_list = n_fft_list
+        self.hop_length_list = hop_length_list
+        self.win_length_list = win_length_list
+        
+        # Register Hann windows as buffers for each scale
+        for n_fft in n_fft_list:
+            self.register_buffer(
+                f"window_{n_fft}",
+                torch.hann_window(n_fft)
+            )
+    
+    def forward(self, audio_hat, audio_real):
+        """
+        Compute multi-scale STFT loss.
+        
+        Args:
+            audio_hat: (B, T) predicted audio
+            audio_real: (B, T) reference audio
+            
+        Returns:
+            loss: scalar loss
+        """
+        if audio_hat.shape != audio_real.shape:
+            raise ValueError(
+                f"Shape mismatch: audio_hat {audio_hat.shape} vs "
+                f"audio_real {audio_real.shape}"
+            )
+        
+        loss = 0.0
+        for n_fft, hop_len, win_len in zip(
+            self.n_fft_list,
+            self.hop_length_list,
+            self.win_length_list
+        ):
+            window = getattr(self, f"window_{n_fft}")
+            
+            # Compute STFT
+            spec_hat = torch.stft(
+                audio_hat,
+                n_fft=n_fft,
+                hop_length=hop_len,
+                win_length=win_len,
+                window=window,
+                center=True,
+                return_complex=True,
+            )
+            spec_real = torch.stft(
+                audio_real,
+                n_fft=n_fft,
+                hop_length=hop_len,
+                win_length=win_len,
+                window=window,
+                center=True,
+                return_complex=True,
+            )
+            
+            # Magnitude spectrograms
+            mag_hat = torch.abs(spec_hat)
+            mag_real = torch.abs(spec_real)
+            
+            # Log magnitude (with small epsilon for numerical stability)
+            log_mag_hat = torch.log(mag_hat + 1e-9)
+            log_mag_real = torch.log(mag_real + 1e-9)
+            
+            # L1 loss on log magnitude
+            loss += F.l1_loss(log_mag_hat, log_mag_real)
+        
+        # Average across scales
+        return loss / len(self.n_fft_list)
+
+
+def spectral_loss(audio_hat, audio_real, sample_rate=16000):
+    """
+    Quick spectral loss using a default STFT configuration.
+    
+    Args:
+        audio_hat: (B, T) predicted audio
+        audio_real: (B, T) reference audio
+        sample_rate: sample rate
+        
+    Returns:
+        loss: scalar
+    """
+    loss_fn = MultiScaleSTFTLoss()
+    return loss_fn(audio_hat, audio_real)
+
+
 def mse_loss(reconstructed, target):
     """
     Mean Squared Error loss for reconstruction.
