@@ -2,7 +2,7 @@ from src.paths import *
 import os
 import torch
 
-from src.models2_latent import ConditionalVAE
+from src.model_cVAE_2D import ConditionalVAE
 
 def load_cVAE(device, path=PATHS['cVAE_2D']['model']):
     model = ConditionalVAE(
