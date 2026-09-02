@@ -33,7 +33,7 @@ import torchcrepe
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.append(str(PROJECT_ROOT))
 
-from src.dataset_og import NSynth  # devuelve waveform, sr, key, metadata
+from src.dataset import NSynth  # devuelve waveform, sr, key, metadata
 
 
 # ---------------------------------------------------------------------
