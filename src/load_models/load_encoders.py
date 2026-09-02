@@ -1,4 +1,4 @@
-from paths import *
+from src.paths import *
 import os
 import torch
 
@@ -25,13 +25,12 @@ def load_cVAE(device, path=PATHS['cVAE_2D']['model']):
 
 from src.latent_models import latent_VAE
 
-def load_VAE(device, path=PATHS['latent_VAE']['model']):
+def load_VAE(device, path=PATHS['VAE_2D']['model']):
     model = latent_VAE(
         input_size=VAE_INPUT_SIZE,
         latent_dim=VAE_LATENT_DIM,
         channels=VAE_CHANNELS,
         strides=VAE_STRIDES,
-        variational=True
     ).to(device)
     
     if os.path.exists(path):

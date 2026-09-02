@@ -1,12 +1,12 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils.dataset import *
-from utils.audio_utils import *
+from src.utils.dataset import *
+from src.utils.audio_utils import *
 from torch.utils.data import Dataset
 import os
 import torch
-from utils.dataset import (
+from src.utils.dataset import (
     load_json,
     process_metadata,
     load_raw_waveform,
