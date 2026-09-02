@@ -14,7 +14,7 @@ class AudioPipeline:
         self.stft_transform = stft_transform
 
     def __call__(self, x):
-        wave, _, _, _ = x
+        wave, _, _, _, _, _ = x
         wave = wave.to(device)  # <-- mover wave a GPU antes de la STFT
         stft_spec = self.stft_transform(wave)
         del wave
