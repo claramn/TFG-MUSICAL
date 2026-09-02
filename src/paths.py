@@ -16,7 +16,7 @@ PATHS = {
         'checkpoint' : _root + r"\models\latent_VAE_check.pth"
     },
     'cVAE_2D' : {
-        'model' : _root + r"\models\latent_cVAE.pth",
+        'model' : _root + r"\models\cvae7_latent.pth",
         'checkpoint' : _root + r"\models\latent_cVAE_check.pth"
     },
     'minst_VAE' : {
