@@ -533,7 +533,7 @@ class ConditionalVAE(nn.Module):
 
     @torch.no_grad()
     def sample(self, instrument_onehot, pitch_norm, velocity_norm,
-               brightness, sustain, n_samples=1):
+               brightness, sustain, n_samples=1, z=None):
         """
         Genera audio desde el prior N(0,I) sin pasar audio de entrada.
         Útil para el demo web: das etiquetas y obtienes síntesis.
@@ -556,7 +556,8 @@ class ConditionalVAE(nn.Module):
         brightness         = self._prep_condition_tensor(brightness, n_samples, device)
         sustain            = self._prep_condition_tensor(sustain, n_samples, device)
 
-        z = torch.randn(n_samples, self.latent_dim, H_lat, W_lat, device=device)
+        if z is None:
+            z = torch.randn(n_samples, self.latent_dim, H_lat, W_lat, device=device)
         c_map = self._condition_map(instrument_onehot, pitch_norm, velocity_norm,
                                     brightness, sustain, hw=(H_lat, W_lat))
         zc       = torch.cat([z, c_map], dim=1)
