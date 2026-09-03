@@ -296,7 +296,7 @@ class MultiDecoderLoss2(nn.Module):
             floor = self.free_bits / (H_lat * W_lat)
 
         kl_clamped = torch.clamp(kl_per_element, min=floor)
-        kl_total   = kl_clamped.sum(dim=[1, 2, 3])   # (B,)
+        kl_total   = kl_clamped.mean(dim=[1, 2, 3])   # antes: .sum(...)
         return kl_total.mean()
 
     def forward(self, mel_orig, mel_hat, ddsp_params, features_real, kld, mu, logvar):
