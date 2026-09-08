@@ -1,6 +1,5 @@
 _root = r"C:\Users\Articuno\Desktop\TFG-MUSICAL\data"
 
-# TODO usar los paths estos
 PATHS = {
     'autoencoder' : {
         'model' : _root + r"\models\autoencoder_fase.pth"
@@ -92,6 +91,6 @@ CVAE_INPUT_SIZE = (CVAE_N_MELS, CVAE_MAX_FRAMES)
 
 AE_INPUT_HEIGHT = 4000 # = n_fft because onesided=False
 AE_INPUT_WIDTH = 201 # = 1 + floor((T - n_ftt) / hop_length), where T is the whole duration (4 * 16000 = 64000)
-AE_LATENT_DIM = 200 # TODO seguramente deba cambiarlo a 8
+AE_LATENT_DIM = 200
 AE_CHANNELS = [2, 16, 32, 64]
 AE_INPUT_SIZE = (AE_INPUT_HEIGHT, AE_INPUT_WIDTH)

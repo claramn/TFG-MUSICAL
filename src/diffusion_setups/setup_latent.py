@@ -30,32 +30,6 @@ def setup_latent_model(timesteps=1000, emb_dim=128, hidden_dims=32, latent_dim=8
         ch_progression = [hidden_dims * (2 ** i) for i in range(deep)]  # [32, 64, 128, 256]
     else:
         ch_progression = [hidden_dims for _ in range(deep)]             # [32, 32, 32, 32]
-
-    ######################
-    #### OPCION 1 ########
-    ######################
-
-    # Down: hidden_dims -> ch_progression[0] -> ch_progression[1] -> ...
-    # down_layers = []
-    # in_ch = hidden_dims
-    # for out_ch in ch_progression:
-    #     down_layers.append(DummyLayer(in_ch, out_ch, norm_groups, emb_dim, skip=True, stride=-2).to(device))
-    #     in_ch = out_ch
-    # down_layers = nn.ModuleList(down_layers)
-
-    # bottleneck = DummyLayer(in_ch, in_ch, norm_groups, emb_dim).to(device)
-
-    # # Up: espejo del down, sumando los canales del skip correspondiente
-    # skip_channels = [hidden_dims] + ch_progression[:-1]
-    # up_layers = []
-    # for out_ch in reversed(skip_channels):
-    #     up_layers.append(DummyLayer(in_ch + out_ch, out_ch, norm_groups, emb_dim, stride=-2).to(device))
-    #     in_ch = out_ch
-    # up_layers = nn.ModuleList(up_layers)
-    
-    ######################
-    #### OPCION 2 ########
-    ######################
     
     # Down
     down_layers = []

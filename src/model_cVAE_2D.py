@@ -1,61 +1,8 @@
-"""
-Conditional VAE multimodal (esqueleto Fase 2) version "todo convolucional"
-
-CAMBIOS RESPECTO A LA VERSION ANTERIOR (ahora sin nn.Linear ni nn.Flatten):
-
-1. El espacio latente YA NO es un vector plano (B, latent_dim). Ahora es un
-   MAPA espacial (B, latent_dim, H_lat, W_lat): cada posicion del mel-espec
-   comprimido tiene su propia media/varianza, en vez de aplastar todo en
-   un vector. Asi no perdemos la relacion frecuencia/tiempo al comprimir.
-
-2. Encoder.fc_mu / fc_logvar (antes nn.Linear sobre el tensor aplanado)
-   -> ahora son nn.Conv2d con kernel_size=1. Una conv 1x1 es, en la
-   practica, "un Linear que se aplica en cada posicion espacial por
-   separado", pero sin usar Flatten en ningun momento.
-
-3. ConditionEmbedder ya no es un MLP de nn.Linear sobre un vector (B,15).
-   Es un MLP de Conv2d 1x1 sobre ese mismo vector visto como imagen de
-   1x1 pixel: (B, 15, 1, 1). La salida (B, condition_dim, 1, 1) se
-   expande (broadcast, sin copiar memoria) a (B, condition_dim, H_lat,
-   W_lat) para poder concatenarla con z canal-a-canal en cada posicion
-   espacial.
-
-4. DecoderMel: el viejo nn.Linear + nn.Unflatten desaparece entero. Como
-   z y c ya vienen en formato espacial (misma H_lat, W_lat que la salida
-   del encoder), solo hace falta una Conv2d 1x1 para pasar de
-   (latent_dim + condition_dim) canales a los canales que espera la
-   primera ConvTranspose2d. El resto (la pila de ConvTranspose2d) es
-   igual que antes.
-
-5. DecoderDDSP: aqui no hay una "imagen" que preservar, pero si hay
-   estructura TEMPORAL (el eje W del mapa latente es el eje tiempo del
-   mel-espectrograma antes de comprimir). Para no usar Linear:
-     a) Una Conv2d con kernel (H_lat, 1) colapsa el eje de frecuencia a
-        1, dejando el eje temporal intacto -> (B, hidden, 1, W_lat).
-     b) Un par de Conv2d (1,3) refinan la señal a lo largo del tiempo
-        (kernel horizontal, no miran mas que el eje tiempo).
-     c) F.interpolate ajusta el eje temporal a n_frames exactos (W_lat
-        depende del tamaño de entrada; n_frames es un hiperparametro
-        fijo). No es una capa con pesos, solo remuestreo.
-     d) Cabezas Conv2d 1x1 (f0 / loudness / harmonics), igual de
-        "independientes" que las cabezas Linear de antes, pero sin
-        aplanar el tensor.
-
-El resto de la logica (KLD, reparametrizacion, sample(), interpolate())
-es la misma idea que antes, solo adaptada a que z/c ahora tienen forma
-(B, C, H, W) en vez de (B, C).
-"""
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 
-# Helpers de shape (iguales que antes) 
-"""
-son funciones literales, calculan como se encoge o agranda la imagen al pasar por las redes convolucionales
-adjust_shape es un parche d seguridad por si al reconstruir la imagen falta o sobra algun pixel (esto puede pasar pq pytorch redondea divisiones a veces)
-"""
 def compute_conv2D_output_size(input_size, kernel_size, stride, padding):
     H_in, W_in = input_size
     H_out = (H_in + 2 * padding[0] - kernel_size[0]) // stride[0] + 1
@@ -85,14 +32,6 @@ def adjust_shape(x, target_hw, pad_mode='reflect'):
         x = F.pad(x, (0, tw - W), mode=pad_mode)
     return x
 
-
-#  ConditionEmbedder (antes MLP de Linear, ahora MLP de Conv2d 1x1) 
-"""
-las redes neuronales no entienden d instrumento. este bloque coge las etiquetas (instrumento,pitch,velocity,brightness,sustain)
-y los tritura con Conv2d 1x1 (antes eran Linear, matematicamente es lo mismo pero sin aplanar nada).
-coge 15 nums iniciales, los ve como una "imagen" de 1x1 pixel y 15 canales, y saca un vector d condicion_dim canales
-(sigue siendo 1x1 espacialmente). luego, fuera de esta clase, se expande a HxW para pegarlo con el mapa latente.
-"""
 
 class ConditionEmbedder(nn.Module):
     """
@@ -147,15 +86,6 @@ class ConditionEmbedder(nn.Module):
         return self.embedder(c)                # (B, condition_dim, 1, 1)
 
 
-#Encoder (Conv2d hasta el final, mu/logvar tambien son Conv2d) 
-"""
-coge el espectrogrma (mel-spec) y lo pasa por capas convolucionales q lo hacen cada vez mas pequeño
-pero mas profundo (mas canales). ANTES: al final se aplastaba (flatten) y con dos Linear salian mu y logvar.
-AHORA: mu y logvar se sacan con Conv2d 1x1 directamente sobre el mapa de caracteristicas, asi que
-mu/logvar mantienen forma (B, latent_dim, H_lat, W_lat) en vez de (B, latent_dim). El espacio latente
-es un mapa, no un vector: se preserva la estructura espacial del mel-spec comprimido.
-"""
-
 class Encoder(nn.Module):
     """
     Conv2D stack: (B,1,H,W) → μ (B, latent_dim, H_lat, W_lat),
@@ -199,15 +129,6 @@ class Encoder(nn.Module):
         return self.sizes
 
 
-#Decoder_Mel (ConvTranspose2D, recibe z||c ya en formato espacial) 
-"""
-proceso inverso al encoder. ANTES: un Linear + Unflatten "desplegaban" el vector latente en un mapa.
-AHORA no hace falta: z y c ya vienen como mapa espacial (mismo H_lat, W_lat que la salida del
-encoder), asi que solo se necesita una Conv2d 1x1 para mezclar/ajustar canales
-(latent_dim + condition_dim -> canales que espera la primera ConvTranspose2d). El resto
-(la pila de deconvoluciones) es igual que antes.
-"""
-
 class DecoderMel(nn.Module):
     """
     (B, latent_dim + condition_dim, H_lat, W_lat) → (B, 1, H, W)  Mel-spectrogram reconstruido.
@@ -227,8 +148,6 @@ class DecoderMel(nn.Module):
         rev_sz   = list(reversed(sizes))
         in_dim   = latent_dim + condition_dim   # ← recibe z∥c (por canales)
 
-        # Conv2d 1x1 en vez de Linear+Unflatten: solo mezcla canales,
-        # no toca H_lat/W_lat (que ya son correctos).
         self.input_conv = nn.Conv2d(in_dim, rev_ch[0], kernel_size=1)
 
         blocks       = []
@@ -259,19 +178,6 @@ class DecoderMel(nn.Module):
         x = self.decoder(x)
         return x
 
-
-#Decoder_DDSP (todo Conv2d, sin Linear/Flatten) 
-"""
-ruta alternativa al decoder mel. coge el mismo mapa latent_dim+condition_dim (ahora espacial), pero
-en vez d dibujar una imagen, escupe instrucciones para un sintetizador.
-
-como aqui no hay una "imagen" que reconstruir, lo que se preserva es la estructura TEMPORAL: el eje W
-del mapa latente corresponde al eje tiempo del mel-spec antes de comprimir. estrategia sin Linear:
-  1) Conv2d con kernel (H_lat,1) colapsa el eje de frecuencia a 1 (no mezcla con el tiempo)
-  2) Conv2d (1,3) refinan la señal SOLO a lo largo del tiempo
-  3) F.interpolate ajusta el eje temporal a n_frames exactos
-  4) Conv2d 1x1 = cabezas independientes (f0 / loudness / harmonics), como antes pero sin Linear
-"""
 
 class DecoderDDSP(nn.Module):
     """
@@ -348,51 +254,8 @@ class DecoderDDSP(nn.Module):
         }
 
 
-# ConditionalVAE
-"""
-aqui es dnd se junta todo!!!
-forward hace:
-coge el mel-spec y saca el latente espacial (mu,logvar) -> $z$ (mapa, no vector)
-coge las etiquetas y saca el embedding -> $c$ (1x1, se expande a HxW)
-los pega por canal (torch.cat) -> $zc$ (mapa con latent_dim+condition_dim canales)
-le pasa ese paquete al decoder mel y al ddsp
-devuelve todo pa q luego la loss function le diga a la red cuando se equiivoca
-
-CHETOS NUEVOS (igual que antes, adaptados a z espacial):
-sample: si le pides a la red q genere un sonido, se inventa un mapa $z$ aleatorio
-        (torch.randn con forma (B, latent_dim, H_lat, W_lat)), le pega las etiquetas
-        (expandidas a HxW) y genera audio. NO HACE FALTA AUDIO D ENTRADA !!!!
-interpolate: coge dos audios distintos, saca sus mapas $z$ y calcula los pasos intermedios,
-        asi se hace morph d dos sonidos (interpolacion pixel a pixel del mapa latente)
-"""
-
 class ConditionalVAE(nn.Module):
-    """
-    VAE condicional con dos decoders paralelos: Mel y DDSP.
-    Todo el modelo usa Conv2d, no hay nn.Linear ni nn.Flatten en ningún sitio.
-    El espacio latente es un mapa espacial (B, latent_dim, H_lat, W_lat),
-    no un vector, para no perder la relación frecuencia/tiempo del mel-spec.
-
-    Args:
-        input_size    : (H, W) del Mel-spec, p.ej. (80, 128)
-        latent_dim    : nº de canales del espacio latente, p.ej. 256
-        channels      : lista de canales del encoder, p.ej. [1, 32, 64, 128, 256]
-        condition_dim : nº de canales del embedding de condición, p.ej. 128
-        n_frames      : frames temporales del decoder DDSP
-        n_harmonics   : armónicos del decoder DDSP
-        ddsp_hidden   : tamaño de capa oculta del "MLP" (ahora Conv2d) DDSP
-
-    Uso mínimo:
-        model = ConditionalVAE(
-            input_size   = (80, 128),
-            latent_dim   = 256,
-            channels     = [1, 32, 64, 128, 256],
-            condition_dim= 128,
-        )
-        out = model(mel, instrument_oh, pitch_n, vel_n, brightness, sustain)
-        # out = (mel_hat, ddsp_params, kld)
-    """
-
+    
     def __init__(self, input_size=(80, 128), latent_dim=256,
                  channels=None, condition_dim=128,
                  n_frames=100, n_harmonics=64, ddsp_hidden=256, free_bits=0.0):
@@ -460,22 +323,7 @@ class ConditionalVAE(nn.Module):
     def forward(self, mel,
                 instrument_onehot, pitch_norm, velocity_norm,
                 brightness, sustain):
-        """
-        Parámetros
-        ----------
-        mel               : (B, 1, H, W)   Mel-spectrogram normalizado
-        instrument_onehot : (B, 11)
-        pitch_norm        : (B,) o (B,1)   MIDI/127
-        velocity_norm     : (B,) o (B,1)   velocity/127
-        brightness        : (B,) o (B,1)
-        sustain           : (B,) o (B,1)
 
-        Retorna
-        -------
-        mel_hat    : (B, 1, H, W)   Mel reconstruido
-        ddsp_params: dict con f0_scale, loudness_scale, harmonics
-        kld        : (B,)           KL divergence por muestra
-        """
         B, C, H, W = mel.shape
 
         # 1. Codificar → mapa latente, no vector
@@ -503,16 +351,7 @@ class ConditionalVAE(nn.Module):
     #  Sampling (inferencia / demo) 
     @staticmethod
     def _prep_condition_tensor(t, n_samples, device):
-        """
-        Normaliza un tensor de condicion para sample():
-          - lo manda al device del modelo
-          - le asegura una dimension de batch
-          - si viene con batch=1 (una sola condicion) y se piden varias
-            muestras, la REPITE n_samples veces (torch.repeat, copia real
-            de memoria, que no expand, para que .view() no falle luego)
-          - si el batch no es 1 ni coincide con n_samples, avisa claro
-            en vez de dejar que torch.cat falle con un error críptico
-        """
+
         t = torch.as_tensor(t, dtype=torch.float32, device=device)
         if t.dim() == 0:
             t = t.view(1, 1)
@@ -534,19 +373,7 @@ class ConditionalVAE(nn.Module):
     @torch.no_grad()
     def sample(self, instrument_onehot, pitch_norm, velocity_norm,
                brightness, sustain, n_samples=1, z=None):
-        """
-        Genera audio desde el prior N(0,I) sin pasar audio de entrada.
-        Útil para el demo web: das etiquetas y obtienes síntesis.
-
-        Acepta tanto:
-          - una condicion por muestra (batch de cada tensor == n_samples), o
-          - una unica condicion compartida (batch == 1), que se repite
-            automaticamente n_samples veces, asi puedes pedir "dame 5
-            variaciones de este instrumento/pitch" sin repetir tu mismo
-            los tensores antes de llamar.
-
-        Retorna mel_hat y ddsp_params.
-        """
+ 
         device = next(self.parameters()).device
         H_lat, W_lat = self.latent_hw
 

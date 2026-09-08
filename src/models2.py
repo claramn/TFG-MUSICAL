@@ -1,30 +1,8 @@
-"""
-Conditional VAE multimodal (esqueleto Fase 2)
-
-
-Notas de implementación:
-  - Encoder y Decoder_Mel heredan directamente de tu VAE original.
-  - Decoder_DDSP es un MLP ligero; la síntesis DDSP real va en losses.py / vocoder.py.
-  - ConditionEmbedder: MLP 15 → 64 → 128.
-  - La concatenación [z, c] entra tanto a Decoder_Mel como a Decoder_DDSP,
-    por eso fc del decoder acepta latent_dim + condition_dim en vez de latent_dim.
-
-PRINCIPALES DIFERENCIAS CON LO ANTERIOR
-1: doble salida (bifurcacion): el antiguo cogia el audio, lo comprimia y lo escupia (espectrogramma). este nuevo escupe el espectrograma y los parametros del sintetizador ddsp
-2: inyeccion d etiquetas (condicion): antes la red aprendia "a ciegas·, ahora le decimos q instrumento suena, pitch taltal. para eso se crea un vector $c$ (condicion) q se pega al vector $z$ (espacio olatente)
-3: limpieza de codigo: se ha quitado codigo sobrante d los autoencoders normales (variational = False),  pq aqui vamos a fuego con el VAE
-"""
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Normal
 
-#Helpers de shape (iguales q antes)
-"""
-son funciones literales, calculan como se encoge o agranda la imagen al pasar por las redes convolucionales
-adjust_shape es un parche d seguridad por si al reconstruir la imagen falta o sobra algun pixel (esto puede pasar pq pytorch redondea divisiones a veces)
-"""
 def compute_conv2D_output_size(input_size, kernel_size, stride, padding):
     H_in, W_in = input_size
     H_out = (H_in + 2 * padding[0] - kernel_size[0]) // stride[0] + 1
@@ -109,13 +87,6 @@ class ConditionEmbedder(nn.Module):
         return self.mlp(c)         # (B, condition_dim)
 
 
-#Encoder (igual que VAE, siempre variational=True aquí)
-""" 
-coge el espectrogrma (mel-spec) y lo pasa por capas convolucionales q lo hacen cada vez mas pequeño
-pero mas profundo (mas canales). al final lo aplasta (flatten) y saca 2 cosas: mu (media) y logvar (varianza)
-hemos quitado variational=false y batchnorm pq en las vae el batch normalization a veces hace q el modelo se vuelva to tonto
-"""
-
 class Encoder(nn.Module):
     """
     Conv2D stack: (B,1,H,W) → μ (B, latent_dim), logvar (B, latent_dim)
@@ -156,15 +127,6 @@ class Encoder(nn.Module):
 
     def get_sizes(self):
         return self.sizes
-
-
-#Decoder_Mel (ConvTranspose2D, acepta z + c concatenados) 
-""" 
-proceso inverso al decoder. Coge un vector d nums, lo desenrrolla (unflatten) y usa descoconvoluciones para volver
-a dibujar el espectrograma og
-antes self.fc recibia un tamaño d latent_dim, ahora recibe latent_dim + condition_dim. 
-esto es pq estamos inyectando las etiquetas junto el audio comprimido
-"""
 
 class DecoderMel(nn.Module):
     """
@@ -216,12 +178,6 @@ class DecoderMel(nn.Module):
         x = self.decoder(x)
         return x
 
-
-#Decoder_DDSP (MLP ligero → parámetros para el vocoder DDSP) 
-""" 
-ruta alternativa al decoder mel. coge el mismo vector d latent_dim + condition_dim, pero en vez d dibujar una imagen, escupe instrucciones para un sintetizador
-
-"""
 
 class DecoderDDSP(nn.Module):
     """
@@ -280,45 +236,8 @@ class DecoderDDSP(nn.Module):
         }
 
 
-# ConditionalVAE
-""" 
-aqui es dnd se junta todo!!!
-forward hace:
-coge el audio y saca el latente (mu,logvar) -> $z%
-coge las etiquetas y saca el embedding -> $c$
-los pega (torch.cat) -> $zc$
-le pasa ese paquete al decoder mel y al ddsp
-devuelve todo pa q luego la loss function le diga a la red cuando se equiivoca
-
-CHETOS NUEVOS:
-sample: si le pides a la red q genere un sonido, se inventa un vector $z$ aleatorio (torch.randn), le suma las etiquetas q nosotros le digamos y genera audio. NO HACE FALTA AUDIO D ENTRADA !!!!
-interpolate: coge dos audios distintos, saca sus vectores $z$ y calcula los pasos intermedios, asi se hace morph d dos sonidos
-"""
-
 class ConditionalVAE(nn.Module):
-    """
-    VAE condicional con dos decoders paralelos: Mel y DDSP.
-
-    Args:
-        input_size    : (H, W) del Mel-spec, p.ej. (80, 128)
-        latent_dim    : dimensión del espacio latente, p.ej. 256
-        channels      : lista de canales del encoder, p.ej. [1, 32, 64, 128, 256]
-        condition_dim : dimensión del embedding de condición, p.ej. 128
-        n_frames      : frames temporales del decoder DDSP
-        n_harmonics   : armónicos del decoder DDSP
-        ddsp_hidden   : tamaño de capa oculta del MLP DDSP
-
-    Uso mínimo:
-        model = ConditionalVAE(
-            input_size   = (80, 128),
-            latent_dim   = 256,
-            channels     = [1, 32, 64, 128, 256],
-            condition_dim= 128,
-        )
-        out = model(mel, instrument_oh, pitch_n, vel_n, brightness, sustain)
-        # out = (mel_hat, ddsp_params, kld)
-    """
-
+   
     def __init__(self, input_size=(80, 128), latent_dim=256,
                  channels=None, condition_dim=128,
                  n_frames=100, n_harmonics=64, ddsp_hidden=256):
@@ -360,22 +279,7 @@ class ConditionalVAE(nn.Module):
     def forward(self, mel,
                 instrument_onehot, pitch_norm, velocity_norm,
                 brightness, sustain):
-        """
-        Parámetros
-        ----------
-        mel               : (B, 1, H, W)   Mel-spectrogram normalizado
-        instrument_onehot : (B, 11)
-        pitch_norm        : (B,) o (B,1)   MIDI/127
-        velocity_norm     : (B,) o (B,1)   velocity/127
-        brightness        : (B,) o (B,1)
-        sustain           : (B,) o (B,1)
 
-        Retorna
-        -------
-        mel_hat    : (B, 1, H, W)   Mel reconstruido
-        ddsp_params: dict con f0_scale, loudness_scale, harmonics
-        kld        : (B,)           KL divergence por muestra
-        """
         B, C, H, W = mel.shape
 
         # 1. Codificar
