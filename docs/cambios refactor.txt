@@ -12,9 +12,7 @@ CVAE:
     Samplear un monton de audios y guardarlos
     Comparar esos audos usando 00_evaluations.ipynb
 
-Difusion:
-    Limpiar el notebook 07_diffusion_training.ipynb
-    Eliminar diffusion_usage
+
 
 Reordenar los ipynbs
 
@@ -30,4 +28,8 @@ HECHOS
     Mover 08_cVAE_2D.ipynb a 11_CVAE_2D.ipynb y reordenar su código
     Funciones para cargar los modelos codificadores
     Mover la parte de extraer los latentes a otro notebook
+
+    Difusion:
+    Limpiar el notebook 07_diffusion_training.ipynb
+    Eliminar diffusion_usage
 
