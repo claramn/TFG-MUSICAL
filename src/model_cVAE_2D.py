@@ -1,5 +1,5 @@
 """
-Conditional VAE multimodal (esqueleto Fase 2) — version "todo convolucional"
+Conditional VAE multimodal (esqueleto Fase 2) version "todo convolucional"
 
 CAMBIOS RESPECTO A LA VERSION ANTERIOR (ahora sin nn.Linear ni nn.Flatten):
 
@@ -106,7 +106,7 @@ class ConditionEmbedder(nn.Module):
       - sustain           : (B,  1)   parámetro continuo [0,1]
     Total input = 11 + 1 + 1 + 1 + 1 = 15
 
-    Salida: (B, condition_dim, 1, 1)  — se expande a (H,W) fuera de aquí,
+    Salida: (B, condition_dim, 1, 1) -> se expande a (H,W) fuera de aquí,
     donde haga falta (ver ConditionalVAE._condition_map).
     """
 
@@ -143,7 +143,7 @@ class ConditionEmbedder(nn.Module):
             _col(sustain),
         ], dim=1)                              # (B, 15)
 
-        c = c.view(c.shape[0], c.shape[1], 1, 1)   # (B, 15, 1, 1) — sin Flatten
+        c = c.view(c.shape[0], c.shape[1], 1, 1)   # (B, 15, 1, 1) sin Flatten
         return self.embedder(c)                # (B, condition_dim, 1, 1)
 
 
@@ -255,7 +255,7 @@ class DecoderMel(nn.Module):
 
     def forward(self, zc):
         """zc: (B, latent_dim + condition_dim, H_lat, W_lat)"""
-        x = self.input_conv(zc)   # (B, rev_ch[0], H_lat, W_lat) — solo cambia canales
+        x = self.input_conv(zc)   # (B, rev_ch[0], H_lat, W_lat) solo cambia canales
         x = self.decoder(x)
         return x
 
@@ -300,7 +300,7 @@ class DecoderDDSP(nn.Module):
         H_lat, W_lat = latent_hw
 
         # 1) Colapsa el eje de frecuencia (H_lat) a 1, conserva el eje tiempo (W_lat).
-        #    Esto sustituye al "Flatten" — en vez de aplastar todo, solo se
+        #    Esto sustituye al "Flatten": en vez de aplastar todo, solo se
         #    aplasta la dimension que no nos interesa (frecuencia).
         self.freq_collapse = nn.Sequential(
             nn.Conv2d(in_dim, hidden_dim, kernel_size=(H_lat, 1)),
@@ -369,7 +369,7 @@ interpolate: coge dos audios distintos, saca sus mapas $z$ y calcula los pasos i
 class ConditionalVAE(nn.Module):
     """
     VAE condicional con dos decoders paralelos: Mel y DDSP.
-    Todo el modelo usa Conv2d — no hay nn.Linear ni nn.Flatten en ningún sitio.
+    Todo el modelo usa Conv2d, no hay nn.Linear ni nn.Flatten en ningún sitio.
     El espacio latente es un mapa espacial (B, latent_dim, H_lat, W_lat),
     no un vector, para no perder la relación frecuencia/tiempo del mel-spec.
 
@@ -509,7 +509,7 @@ class ConditionalVAE(nn.Module):
           - le asegura una dimension de batch
           - si viene con batch=1 (una sola condicion) y se piden varias
             muestras, la REPITE n_samples veces (torch.repeat, copia real
-            de memoria — no expand, para que .view() no falle luego)
+            de memoria, que no expand, para que .view() no falle luego)
           - si el batch no es 1 ni coincide con n_samples, avisa claro
             en vez de dejar que torch.cat falle con un error críptico
         """
@@ -541,7 +541,7 @@ class ConditionalVAE(nn.Module):
         Acepta tanto:
           - una condicion por muestra (batch de cada tensor == n_samples), o
           - una unica condicion compartida (batch == 1), que se repite
-            automaticamente n_samples veces — asi puedes pedir "dame 5
+            automaticamente n_samples veces, asi puedes pedir "dame 5
             variaciones de este instrumento/pitch" sin repetir tu mismo
             los tensores antes de llamar.
 
