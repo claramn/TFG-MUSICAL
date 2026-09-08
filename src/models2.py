@@ -252,7 +252,7 @@ class DecoderDDSP(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
         )
-        # Cabezas independientes — así puedes anular o escalar cada una
+        # Cabezas independientes, así puedes anular o escalar cada una
         self.head_f0       = nn.Linear(hidden_dim, n_frames)
         self.head_loudness = nn.Linear(hidden_dim, n_frames)
         self.head_harm     = nn.Linear(hidden_dim, n_frames * n_harmonics)
@@ -340,7 +340,7 @@ class ConditionalVAE(nn.Module):
         self.decoder_ddsp = DecoderDDSP(latent_dim, condition_dim,
                                         n_frames, n_harmonics, ddsp_hidden)
 
-        # Prior N(0,I) — movemos a device en el primer forward
+        # Prior N(0,I), movemos a device en el primer forward
         self._prior_loc   = None
         self._prior_scale = None
 
